@@ -1,0 +1,14 @@
+{
+  "name": "closet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js and FastAPI workspace for closet",
+  "scripts": {
+    "start:node": "node server.js",
+    "start:api": ".venv/bin/python -m uvicorn api.main:app --reload --port 8000",
+    "dev": "npm run start:node"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
