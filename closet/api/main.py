@@ -1,7 +1,8 @@
 import os
+import httpx
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -29,13 +30,47 @@ class UploadPayload(BaseModel):
     user_id: str | None = None
 
 
+def get_user_id_from_request(request: Request) -> str:
+    """Validate Supabase JWT from the Authorization header and return the user id.
+
+    This calls the Supabase Auth user endpoint which returns the user for a valid token.
+    """
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = auth.split(" ", 1)[1].strip()
+    supabase_url = os.getenv("SUPABASE_URL")
+    if not supabase_url:
+        raise HTTPException(status_code=500, detail="SUPABASE_URL not configured on server")
+
+    user_endpoint = f"{supabase_url.rstrip('/')}/auth/v1/user"
+    try:
+        resp = httpx.get(user_endpoint, headers={"Authorization": f"Bearer {token}"}, timeout=5.0)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Auth lookup failed: {exc}") from exc
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    data = resp.json()
+    user_id = data.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Failed to resolve user id from token")
+
+    return user_id
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "closet-api"}
 
 
 @app.post("/upload")
-def upload_image(payload: UploadPayload) -> dict[str, Any]:
+def upload_image(request: Request, payload: UploadPayload) -> dict[str, Any]:
+    # resolve the authenticated Supabase user id from the provided Bearer token
+    user_id = get_user_id_from_request(request)
+
     if supabase is None:
         raise HTTPException(status_code=500, detail="Supabase client is not configured")
 
@@ -53,7 +88,7 @@ def upload_image(payload: UploadPayload) -> dict[str, Any]:
             {
                 "name": payload.name,
                 "image_path": payload.filename,
-                "user_id": payload.user_id,
+                "user_id": user_id,
                 "metadata": None,
             }
         ).select("id,name,image_path").execute()
