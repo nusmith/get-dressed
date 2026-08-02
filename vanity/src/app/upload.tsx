@@ -1,16 +1,19 @@
 import { useState } from 'react';
-import { Alert, Image, Platform, Pressable, StyleSheet } from 'react-native';
+import { Alert, Image, Platform, Pressable, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { uploadImage } from '@/lib/api';
 
 export default function UploadScreen() {
   const [isActive, setIsActive] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [name, setName] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -83,24 +86,49 @@ export default function UploadScreen() {
           <ThemedText style={styles.subtitle}>
             Upload images from your closet
           </ThemedText>
-
-          
           {selectedImage ? (
             <>
               <ThemedView style={styles.previewWrapper}>
                 <Image source={{ uri: selectedImage }} style={styles.previewImage} resizeMode="cover" />
                 <Pressable
+                  disabled={!name.trim() || uploading}
                   style={styles.removeButton}
                   onPress={() => {
                     setSelectedImage(null);
+                    setName('');
                     setConfirmed(false);
                   }}>
                   <ThemedText style={styles.removeButtonText}>✕</ThemedText>
                 </Pressable>
               </ThemedView>
-              <Pressable style={styles.confirmButton} onPress={() => setConfirmed(true)}>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Name this item"
+                style={styles.nameInput}
+              />
+              <Pressable
+                disabled={!name.trim() || uploading}
+                style={[styles.confirmButton, (!name.trim() || uploading) && styles.confirmButtonDisabled]}
+                onPress={async () => {
+                  if (!selectedImage || !name.trim()) {
+                    return;
+                  }
+
+                  try {
+                    setUploading(true);
+                    const filename = `upload-${Date.now()}.jpg`;
+                    await uploadImage(selectedImage, filename, name.trim());
+                    setConfirmed(true);
+                    Alert.alert('Success', 'Image uploaded');
+                  } catch (error) {
+                    Alert.alert('Upload failed', error instanceof Error ? error.message : 'Unknown error');
+                  } finally {
+                    setUploading(false);
+                  }
+                }}>
                 <ThemedText style={styles.confirmButtonText}>
-                  {confirmed ? 'Confirmed' : 'Confirm'}
+                  {uploading ? 'Uploading...' : confirmed ? 'Confirmed' : 'Confirm'}
                 </ThemedText>
               </Pressable>
             </>
@@ -167,6 +195,15 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 360,
   },
+  nameInput: {
+    width: '100%',
+    maxWidth: 360,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   previewImage: {
     width: '100%',
     maxWidth: 360,
@@ -195,6 +232,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 999,
     backgroundColor: '#4f46e5',
+  },
+  confirmButtonDisabled: {
+    opacity: 0.5,
   },
   confirmButtonText: {
     color: 'white',
