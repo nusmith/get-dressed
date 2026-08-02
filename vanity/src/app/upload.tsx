@@ -86,7 +86,6 @@ export default function UploadScreen() {
           <ThemedText style={styles.subtitle}>
             Upload images from your closet
           </ThemedText>
-          <ThemedText style={styles.sessionHint}>Signed in and ready to upload</ThemedText>
           {selectedImage ? (
             <>
               <ThemedView style={styles.previewWrapper}>
