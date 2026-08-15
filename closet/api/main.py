@@ -1,3 +1,4 @@
+import base64
 import os
 import httpx
 from typing import Any
@@ -93,7 +94,7 @@ def get_user_closet(request: Request) -> dict[str, Any]:
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=500, detail=f"DB lookup (closet) failed: {exc}") from exc
 
-    rows = response.get("data", []) or []
+    rows = response.data or []
     items: list[dict[str, Any]] = []
 
     for row in rows:
@@ -129,13 +130,21 @@ def upload_image(request: Request, payload: UploadPayload) -> dict[str, Any]:
     if supabase is None:
         raise HTTPException(status_code=500, detail="Supabase client is not configured")
 
+    image_data = payload.image_data
+    print(payload.content_type)
+    if "," in image_data:
+        image_data = image_data.split(",", 1)[1]
     try:
+        print("image_data prefix:", payload.image_data[:100])
+        image_bytes = base64.b64decode(image_data)
+        print(image_bytes[:10])
         response = supabase.storage.from_("images").upload(
             path=payload.filename,
-            file=payload.image_data,
+            file=image_bytes,
             file_options={"content-type": payload.content_type},
         )
     except Exception as exc:  # pragma: no cover - simple integration error handling
+        print(f"[closet] upload failed for {payload.filename}: {exc}")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     # persist a single closet entry (schema: id, user_id, created_at, name, image_path, metadata)
     try:
@@ -148,12 +157,14 @@ def upload_image(request: Request, payload: UploadPayload) -> dict[str, Any]:
             }
         ).select("id,name,image_path").execute()
     except Exception as exc:  # pragma: no cover
+        print(f"[closet] DB insert failed for {payload.filename}: {exc}")
         raise HTTPException(status_code=500, detail=f"DB insert (closet) failed: {exc}") from exc
 
     closet_row = None
     try:
-        closet_row = closet_insert.get("data")[0]
+        closet_row = closet_insert.data[0]
     except Exception:
+        print(f"[closet] failed to read inserted closet row for {payload.filename}: {closet_insert}")
         raise HTTPException(status_code=500, detail="Failed to read inserted closet row")
 
     return {
