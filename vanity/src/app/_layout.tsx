@@ -45,10 +45,6 @@ export default function TabLayout() {
     return <Redirect href="/login" />;
   }
 
-  if (hasSession && isAuthRoute) {
-    return <Redirect href="/upload" />;
-  }
-
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       {hasSession ? <AppTabs /> : <Slot />}

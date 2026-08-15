@@ -7,12 +7,31 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export async function getAccessToken(): Promise<string | null> {
   try {
-    const res = await supabase.auth.getSession();
-    // supabase.auth.getSession() returns { data: { session } }
-    // session may be null if not signed in
-    // @ts-ignore
-    return res?.data?.session?.access_token ?? null;
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.warn('Supabase session error', error.message);
+      return null;
+    }
+
+    const session = data?.session;
+    return session?.access_token ?? null;
   } catch (err) {
+    console.warn('Failed to read Supabase access token', err);
+    return null;
+  }
+}
+
+export async function getCurrentUserId(): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      console.warn('Supabase user lookup failed', error.message);
+      return null;
+    }
+
+    return data?.user?.id ?? null;
+  } catch (err) {
+    console.warn('Failed to read Supabase user', err);
     return null;
   }
 }

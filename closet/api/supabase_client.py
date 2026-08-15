@@ -12,17 +12,18 @@ try:
 except Exception:
     # dotenv is optional at runtime; environment variables may already be set by the host
     pass
-
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SECRET_KEY = (
+    os.getenv("SUPABASE_SECRET_KEY")
+    or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+)
 
 supabase: Optional[Client] = None
 
-if SUPABASE_URL and SUPABASE_ANON_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+if SUPABASE_URL and SUPABASE_SECRET_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 else:
-    # Provide a clearer runtime message for misconfiguration (keeps app importable)
-    # The API endpoints should check `supabase is None` and return a meaningful HTTP error.
     print(
-        "[closet/api] Supabase not configured: set SUPABASE_URL and SUPABASE_ANON_KEY in the environment or .env"
+        "[closet/api] Supabase not configured: "
+        "set SUPABASE_URL and SUPABASE_SECRET_KEY"
     )
