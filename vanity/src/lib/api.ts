@@ -1,4 +1,6 @@
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000' 
+
+
 
 import { getAccessToken } from './supabase';
 
@@ -19,14 +21,25 @@ export async function uploadImage(imageUri: string, filename: string, name: stri
 
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
+  const imageData = await blobUrlToBase64(imageUri);
+  const match = imageData.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+  const contentType = match?.[1] ?? 'image/jpeg';
+  const extension =
+    contentType === 'image/png'
+      ? 'png'
+      : contentType === 'image/webp'
+        ? 'webp'
+        : 'jpg';
+  const formatted_filename = `upload-${Date.now()}.${extension}`;
+
   const response = await fetch(`${API_BASE_URL}/upload`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      filename,
+      filename: formatted_filename,
       name,
       content_type: 'image/jpeg',
-      image_data: imageUri,
+      image_data: imageData,
     }),
   });
 
@@ -58,4 +71,27 @@ export async function fetchUserClosetItems(): Promise<ClosetItem[]> {
 
   const data = await response.json();
   return data.items ?? [];
+}
+
+async function blobUrlToBase64(blobUrl: string): Promise<string> {
+  const response = await fetch(blobUrl);
+  const blob = await response.blob();
+
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      const result = reader.result;
+
+      if (typeof result !== 'string') {
+        reject(new Error('Failed to convert image to base64'));
+        return;
+      }
+
+      resolve(result);
+    };
+
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
