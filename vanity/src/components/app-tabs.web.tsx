@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   Tabs,
   TabList,
@@ -10,12 +11,14 @@ import { Pressable, View, StyleSheet } from 'react-native';
 
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
+import ErrorBoundary from './ErrorBoundary';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 
 export default function AppTabs() {
   return (
-    <Tabs>
+    <ErrorBoundary fallbackMessage="Tabs failed to render">
+      <Tabs>
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <CustomTabList>
@@ -33,7 +36,8 @@ export default function AppTabs() {
           </TabTrigger>
         </CustomTabList>
       </TabList>
-    </Tabs>
+      </Tabs>
+    </ErrorBoundary>
   );
 }
 
@@ -52,10 +56,11 @@ export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps
 }
 
 export function CustomTabList(props: TabListProps) {
+  const children = React.Children.toArray(props.children);
   return (
     <View {...props} style={styles.tabListContainer}>
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        {props.children}
+        {children}
       </ThemedView>
     </View>
   );

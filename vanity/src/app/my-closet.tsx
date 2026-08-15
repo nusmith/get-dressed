@@ -12,7 +12,6 @@ export default function MyClosetScreen() {
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     let isActive = true;
 
@@ -45,7 +44,7 @@ export default function MyClosetScreen() {
   }, []);
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container}> 
       <SafeAreaView style={styles.safeArea}>
         <ThemedView style={styles.content}>
           {!hasLoaded && loading ? (
@@ -63,6 +62,7 @@ export default function MyClosetScreen() {
             <>
               <FlatList
                 data={items}
+                style={{ width: '100%' }}
                 keyExtractor={(item) => item.id}
                 numColumns={4}
                 contentContainerStyle={styles.listContent}
@@ -96,6 +96,8 @@ export default function MyClosetScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    marginTop: 120,
+    marginHorizontal: 50,
   },
   safeArea: {
     flex: 1,
