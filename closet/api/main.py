@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from api.supabase_client import supabase
+from api.openai_client import call_openai
 
 app = FastAPI(title="Closet API")
 
@@ -30,6 +31,11 @@ class UploadPayload(BaseModel):
     content_type: str
     image_data: str
     user_id: str | None = None
+
+
+class GenerateLookRequest(BaseModel):
+    prompt: str
+    model: str | None = None
 
 
 def get_user_id_from_request(request: Request) -> str:
@@ -174,3 +180,18 @@ def upload_image(request: Request, payload: UploadPayload) -> dict[str, Any]:
         "closet": closet_row,
         "storage_response": response,
     }
+
+
+@app.post("/generate_look")
+def generate_look(request: Request, payload: GenerateLookRequest) -> dict[str, Any]:
+    """Proxy endpoint to call OpenAI from the server side using OPENAI_API_KEY."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured on server")
+
+    try:
+        result = call_openai(payload.prompt, model=payload.model or "gpt-4o-mini", api_key=api_key)
+    except Exception as exc:  # pragma: no cover - surface API errors
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"result": result}
