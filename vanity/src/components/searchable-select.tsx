@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { brandKey } from '@/lib/brands';
@@ -13,6 +13,8 @@ type SearchableSelectProps = {
   /** Let the user keep what they typed when it isn't one of the options. */
   allowCustom?: boolean;
   disabled?: boolean;
+  /** Show a spinner while a value is being filled in. The field stays usable meanwhile. */
+  loading?: boolean;
 };
 
 export function SearchableSelect({
@@ -23,6 +25,7 @@ export function SearchableSelect({
   placeholder = 'Select',
   allowCustom = false,
   disabled = false,
+  loading = false,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -56,9 +59,13 @@ export function SearchableSelect({
         style={[styles.trigger, open && styles.triggerOpen, disabled && styles.disabled]}
         onPress={() => setOpen((o) => !o)}>
         <ThemedText style={[styles.triggerText, !value && styles.placeholder]} numberOfLines={1}>
-          {value ?? placeholder}
+          {value ?? (loading ? 'Filling in…' : placeholder)}
         </ThemedText>
-        <ThemedText style={styles.chevron}>{open ? '▴' : '▾'}</ThemedText>
+        {loading ? (
+          <ActivityIndicator size="small" color="#6b7280" style={styles.chevron} />
+        ) : (
+          <ThemedText style={styles.chevron}>{open ? '▴' : '▾'}</ThemedText>
+        )}
       </Pressable>
 
       {open ? (

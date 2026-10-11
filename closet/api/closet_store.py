@@ -65,8 +65,11 @@ def save_closet_item(
     return {"closet": closet_row, "storage_response": storage_response}
 
 
-def user_brands(user_id: str) -> list[str]:
-    """Distinct brands on this user's closet items, sorted case-insensitively."""
+def user_brands(user_id: str, include_auto_filled: bool = True) -> list[str]:
+    """Distinct brands on this user's closet items, sorted case-insensitively.
+
+    include_auto_filled=False leaves out brands only filled in from photos, keeping ones the user set.
+    """
     if supabase is None:
         raise HTTPException(status_code=500, detail="Supabase client is not configured")
     rows = (
@@ -74,7 +77,10 @@ def user_brands(user_id: str) -> list[str]:
     ).data or []
     seen: dict[str, str] = {}
     for row in rows:
-        brand = ((row.get("metadata") or {}).get("brand") or "").strip()
+        metadata = row.get("metadata") or {}
+        if not include_auto_filled and "brand" in (metadata.get("auto_filled") or []):
+            continue
+        brand = (metadata.get("brand") or "").strip()
         if brand:
             seen.setdefault(brand.lower(), brand)
     return sorted(seen.values(), key=str.lower)
@@ -118,3 +124,18 @@ def closet_item_payload(row: dict[str, Any]) -> dict[str, Any]:
         "source": metadata.get("source"),
         **{k: metadata.get(k) for k in DETAIL_KEYS},
     }
+
+
+def user_sizes(user_id: str) -> list[dict[str, str]]:
+    """(category, subcategory, size) of items whose size the user set themselves, not auto-filled ones."""
+    if supabase is None:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured")
+    rows = (
+        supabase.table("closet").select("metadata").eq("user_id", user_id).not_.is_("metadata->>size", "null").execute()
+    ).data or []
+    sizes = []
+    for row in rows:
+        metadata = row.get("metadata") or {}
+        if metadata.get("category") and "size" not in (metadata.get("auto_filled") or []):
+            sizes.append({k: metadata.get(k) for k in ("category", "subcategory", "size")})
+    return sizes

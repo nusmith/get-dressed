@@ -2,18 +2,23 @@ import base64
 import os
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.auth import get_user_id_from_request
 from api.closet_store import closet_item_payload, fetch_closet_rows, save_closet_item, user_brands
 from api.email_import import router as email_router
 from api.supabase_client import supabase
 from api.taxonomy import DETAIL_KEYS, ItemDetails, clean_item_details, taxonomy_payload
+from api.item_style import describe_item, describe_missing, suggest_details
 from api.openai_client import call_openai
+from api.outfits import SuggestOutfitRequest, suggest_outfit
 
 app = FastAPI(title="Closet API")
+
+# About 20 MB of base64, for a photo up to the 15 MB the model is sent.
+MAX_IMAGE_DATA_LENGTH = 21_000_000
 
 # TODO clean this up and move to a config file or environment variables
 allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:19006,http://127.0.0.1:19006,http://localhost:8081,http://127.0.0.1:8081").split(",") if origin.strip()]
@@ -44,6 +49,21 @@ class GenerateLookRequest(BaseModel):
     model: str | None = None
 
 
+class SuggestDetailsPayload(BaseModel):
+    image_data: str = Field(max_length=MAX_IMAGE_DATA_LENGTH)
+    name: str = Field(default="", max_length=200)
+
+
+def decode_image_data(image_data: str) -> bytes:
+    """Bytes from base64 image data, with or without a data: URL prefix."""
+    if "," in image_data:
+        image_data = image_data.split(",", 1)[1]
+    try:
+        return base64.b64decode(image_data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="image_data is not valid base64") from exc
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "closet-api"}
@@ -62,9 +82,12 @@ def get_user_closet_brands(request: Request) -> dict[str, list[str]]:
 
 
 @app.get("/closet")
-def get_user_closet(request: Request) -> dict[str, Any]:
+def get_user_closet(request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
     user_id = get_user_id_from_request(request)
-    return {"items": [closet_item_payload(row) for row in fetch_closet_rows(user_id)]}
+    rows = fetch_closet_rows(user_id)
+    # Describe any photos that haven't been yet (older items, or a run that failed after saving).
+    background_tasks.add_task(describe_missing, user_id, rows)
+    return {"items": [closet_item_payload(row) for row in rows]}
 
 
 class UpdateDetailsPayload(BaseModel):
@@ -89,14 +112,27 @@ def update_closet_item_details(request: Request, item_id: str, payload: UpdateDe
 
     # Keep everything that isn't a detail (source, Gmail import info); cleared details are removed.
     existing = rows[0].get("metadata") or {}
-    metadata = {k: v for k, v in existing.items() if k not in DETAIL_KEYS} | details
+    # Saving the details confirms them, so none count as auto-filled any more.
+    metadata = {k: v for k, v in existing.items() if k not in DETAIL_KEYS and k != "auto_filled"} | details
 
     supabase.table("closet").update({"metadata": metadata}).eq("id", item_id).eq("user_id", user_id).execute()
     return {"id": item_id, **{k: details.get(k) for k in DETAIL_KEYS}}
 
 
+@app.post("/closet/suggest_details")
+def suggest_closet_item_details(request: Request, payload: SuggestDetailsPayload) -> dict[str, Any]:
+    """Brand, category, subcategory and size guessed from a photo, to pre-fill the upload form."""
+    user_id = get_user_id_from_request(request)
+    image_bytes = decode_image_data(payload.image_data)
+    try:
+        details = suggest_details(user_id, image_bytes, payload.name)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Couldn't read details from the photo") from exc
+    return {k: details.get(k) for k in DETAIL_KEYS}
+
+
 @app.post("/upload")
-def upload_image(request: Request, payload: UploadPayload) -> dict[str, Any]:
+def upload_image(request: Request, payload: UploadPayload, background_tasks: BackgroundTasks) -> dict[str, Any]:
     # resolve the authenticated Supabase user id from the provided Bearer token
     user_id = get_user_id_from_request(request)
     details = (
@@ -105,13 +141,7 @@ def upload_image(request: Request, payload: UploadPayload) -> dict[str, Any]:
         else {}
     )
 
-    image_data = payload.image_data
-    if "," in image_data:
-        image_data = image_data.split(",", 1)[1]
-    try:
-        image_bytes = base64.b64decode(image_data)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="image_data is not valid base64") from exc
+    image_bytes = decode_image_data(payload.image_data)
 
     saved = save_closet_item(
         user_id=user_id,
@@ -122,6 +152,10 @@ def upload_image(request: Request, payload: UploadPayload) -> dict[str, Any]:
         source="manual",
         metadata=details,
     )
+    # Runs after the response is sent, so describing the photo doesn't slow the upload down.
+    background_tasks.add_task(
+        describe_item, user_id, saved["closet"]["id"], payload.name, payload.filename, image_bytes
+    )
 
     return {
         "status": "ok",
@@ -130,6 +164,18 @@ def upload_image(request: Request, payload: UploadPayload) -> dict[str, Any]:
         "closet": saved["closet"],
         "storage_response": saved["storage_response"],
     }
+
+
+@app.post("/outfits/suggest")
+def suggest_user_outfit(
+    request: Request, payload: SuggestOutfitRequest, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
+    """One outfit from the caller's closet. Also used to shuffle it or swap out a single piece."""
+    user_id = get_user_id_from_request(request)
+    rows = fetch_closet_rows(user_id)
+    # Undescribed items are picked by name alone; describe them for next time.
+    background_tasks.add_task(describe_missing, user_id, rows)
+    return suggest_outfit(rows, payload)
 
 
 @app.post("/generate_look")

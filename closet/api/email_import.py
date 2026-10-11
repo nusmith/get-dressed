@@ -16,13 +16,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 
 from api import gmail
 from api.auth import get_user_id_from_request
 from api.closet_store import save_closet_item, user_brands
 from api.email_security import decrypt_token, encrypt_token, sign, verify
+from api.item_style import describe_item
 from api.receipts import download_image, extract_items, normalize_item_name, retailer_from_sender
 from api.supabase_client import supabase
 from api.taxonomy import DETAIL_KEYS, ItemDetails, clean_item_details
@@ -244,7 +245,7 @@ def email_scan(request: Request) -> dict[str, Any]:
 
 
 @router.post("/import")
-def email_import(request: Request, payload: ImportPayload) -> dict[str, Any]:
+def email_import(request: Request, payload: ImportPayload, background_tasks: BackgroundTasks) -> dict[str, Any]:
     user_id = get_user_id_from_request(request)
     if len(payload.proposals) > MAX_IMPORT_BATCH:
         raise HTTPException(status_code=400, detail=f"Import at most {MAX_IMPORT_BATCH} items at a time")
@@ -299,6 +300,8 @@ def email_import(request: Request, payload: ImportPayload) -> dict[str, Any]:
             },
         )
         already.add(key)
+        if image_path:
+            background_tasks.add_task(describe_item, user_id, saved["closet"]["id"], name, image_path, image_bytes)
         results.append({"key": key, "status": "added", "closet": saved["closet"], "image_error": image_error})
 
     return {"results": results}

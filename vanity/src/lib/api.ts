@@ -76,6 +76,21 @@ export async function fetchUserClosetItems(): Promise<ClosetItem[]> {
   return data.items ?? [];
 }
 
+/** Brand, category, subcategory and size guessed from a photo (and name), to pre-fill the upload form. */
+export async function suggestItemDetails(imageUri: string, name: string): Promise<ItemDetails> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/closet/suggest_details`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ image_data: await blobUrlToBase64(imageUri), name }),
+  });
+  if (!response.ok) throw new Error('Could not fill in details');
+  return response.json();
+}
+
 async function blobUrlToBase64(blobUrl: string): Promise<string> {
   const response = await fetch(blobUrl);
   const blob = await response.blob();
@@ -132,4 +147,58 @@ export async function fetchUserBrands(): Promise<string[]> {
   if (!response.ok) throw new Error('Could not load your brands');
   const data = await response.json();
   return data.brands ?? [];
+}
+
+export type OutfitSuggestion = {
+  items: ClosetItem[];
+  /** Items that can go into outfits. Below a few, `items` is empty and the app asks for more. */
+  closet_count: number;
+};
+
+export type SuggestOutfitOptions = {
+  occasion?: string;
+  note?: string;
+  /** Pieces that must stay in the outfit. */
+  keepItemIds?: string[];
+  /** The piece to replace with a different one that does the same job. */
+  swapItemId?: string;
+  /** The outfit being shuffled away from. */
+  previousItemIds?: string[];
+};
+
+/** Today as YYYY-MM-DD in the user's timezone, so outfits suit the season where they are. */
+function localDate(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+export async function suggestOutfit(options: SuggestOutfitOptions = {}): Promise<OutfitSuggestion> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/outfits/suggest`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      occasion: options.occasion,
+      note: options.note,
+      keep_item_ids: options.keepItemIds ?? [],
+      swap_item_id: options.swapItemId,
+      previous_item_ids: options.previousItemIds ?? [],
+      today: localDate(),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let message = errorText;
+    try {
+      message = JSON.parse(errorText).detail ?? errorText;
+    } catch {}
+    throw new Error(message || "Couldn't put an outfit together");
+  }
+
+  return response.json();
 }
