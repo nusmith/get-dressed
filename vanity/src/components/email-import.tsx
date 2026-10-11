@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
+import { StepHeading } from '@/components/step-heading';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import {
@@ -121,6 +122,7 @@ export function EmailImport() {
   if (Platform.OS !== 'web') {
     return (
       <ThemedView style={styles.card}>
+        <StepHeading step={2} title="Import from email" />
         <ThemedText style={styles.helperText}>Importing from email is available on the web app for now.</ThemedText>
       </ThemedView>
     );
@@ -130,7 +132,7 @@ export function EmailImport() {
 
   return (
     <ThemedView style={styles.card}>
-      <ThemedText style={styles.title}>Import from email</ThemedText>
+      <StepHeading step={2} title="Import from email" />
 
       {status === null || busy === 'connecting' ? (
         <ActivityIndicator />
@@ -231,11 +233,8 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 360,
     gap: 10,
-    paddingTop: 16,
+    paddingTop: 36,
     alignItems: 'center',
-  },
-  title: {
-    fontWeight: '600',
   },
   helperText: {
     textAlign: 'center',

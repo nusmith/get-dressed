@@ -16,16 +16,16 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>Get Dressed</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="upload">
-        <NativeTabs.Trigger.Label>Upload</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
       <NativeTabs.Trigger name="my-closet">
         <NativeTabs.Trigger.Label>My Closet</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="shop">
         <NativeTabs.Trigger.Label>Shop</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="upload">
+        <NativeTabs.Trigger.Label>Upload</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
