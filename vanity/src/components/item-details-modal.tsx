@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { SearchableSelect } from '@/components/searchable-select';
 import { ThemedText } from '@/components/themed-text';
-import { fetchUserBrands } from '@/lib/api';
+import { fetchUserBrands, suggestItemDetails } from '@/lib/api';
 import { likelyBrandTypo, mergeBrands } from '@/lib/brands';
 import { useTaxonomy, type ItemDetails } from '@/lib/taxonomy';
+
+type DetailKey = keyof ItemDetails;
 
 type ItemDetailsModalProps = {
   visible: boolean;
@@ -16,6 +18,8 @@ type ItemDetailsModalProps = {
   nameEditable?: boolean;
   /** Disable Confirm until something differs from the initial values (editing existing items). */
   requireChanges?: boolean;
+  /** Guess empty details from the photo while the form is open. Fields the user edits are left alone. */
+  autofill?: boolean;
   busy?: boolean;
   error?: string | null;
   onCancel: () => void;
@@ -29,6 +33,7 @@ export function ItemDetailsModal({
   initialDetails,
   nameEditable = true,
   requireChanges = false,
+  autofill = false,
   busy = false,
   error,
   onCancel,
@@ -41,6 +46,17 @@ export function ItemDetailsModal({
   const [subcategory, setSubcategory] = useState<string | null>(null);
   const [size, setSize] = useState<string | null>(null);
   const [userBrands, setUserBrands] = useState<string[]>([]);
+  const [autofilling, setAutofilling] = useState(false);
+  // Fields the user has changed themselves; autofill never writes over these.
+  const touched = useRef(new Set<DetailKey>());
+  // Only the latest autofill request may fill fields; closing the form or a newer request cancels it.
+  const autofillRequest = useRef(0);
+  const lastAutofillName = useRef<string | null>(null);
+  const current = useRef<ItemDetails>({});
+  current.current = { brand, category, subcategory, size };
+  // Read when autofill answers, since the taxonomy may still be loading when the form opens.
+  const taxonomyRef = useRef(taxonomy);
+  taxonomyRef.current = taxonomy;
 
   // Refresh each time it opens so brands added since then show up. Failures just mean no extras.
   useEffect(() => {
@@ -58,16 +74,69 @@ export function ItemDetailsModal({
   const brandOptions = useMemo(() => mergeBrands(userBrands, taxonomy?.brands ?? []), [userBrands, taxonomy]);
   const brandSuggestion = brand ? likelyBrandTypo(brand, brandOptions) : null;
 
+  const runAutofill = useCallback(
+    async (forName: string) => {
+      if (!imageUri) return;
+      const id = ++autofillRequest.current;
+      lastAutofillName.current = forName;
+      setAutofilling(true);
+      try {
+        const guess = await suggestItemDetails(imageUri, forName);
+        if (id !== autofillRequest.current) return;
+        const fresh = (key: DetailKey) => !touched.current.has(key) && !current.current[key];
+        if (fresh('brand') && guess.brand) setBrand(guess.brand);
+        let nextCategory = current.current.category ?? null;
+        if (fresh('category') && guess.category) {
+          nextCategory = guess.category;
+          setCategory(nextCategory);
+        }
+        const info = taxonomyRef.current?.categories.find((c) => c.name === nextCategory);
+        if (info && fresh('subcategory') && guess.subcategory && info.subcategories.includes(guess.subcategory)) {
+          setSubcategory(guess.subcategory);
+        }
+        if (info && fresh('size') && guess.size && info.sizes.includes(guess.size)) setSize(guess.size);
+      } catch {
+        // Autofill is a convenience; the user can still fill the fields in, and they're guessed after saving.
+      } finally {
+        if (id === autofillRequest.current) setAutofilling(false);
+      }
+    },
+    [imageUri]
+  );
+
   // Start from the provided values each time the modal opens.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      autofillRequest.current++;
+      return;
+    }
     setName(initialName);
     setBrand(initialDetails?.brand ?? null);
     setCategory(initialDetails?.category ?? null);
     setSubcategory(initialDetails?.subcategory ?? null);
     setSize(initialDetails?.size ?? null);
+    touched.current.clear();
+    setAutofilling(false);
+    if (autofill) runAutofill(initialName.trim());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  // The brand often comes from the name ("vagabond boots"), so ask again once the user stops typing one.
+  useEffect(() => {
+    if (!visible || !autofill || !imageUri) return;
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === lastAutofillName.current) return;
+    if (touched.current.has('brand') || current.current.brand) return;
+    const timer = setTimeout(() => runAutofill(trimmed), 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name]);
+
+  const edit = (key: DetailKey, setter: (value: string | null) => void) => (value: string | null) => {
+    touched.current.add(key);
+    setter(value);
+  };
+  const fieldLoading = (key: DetailKey) => autofilling && !touched.current.has(key) && !current.current[key];
 
   const categoryInfo = taxonomy?.categories.find((c) => c.name === category) ?? null;
   // A category whose only size is "One Size" (e.g. bags) has nothing to choose, so hide the field.
@@ -75,6 +144,7 @@ export function ItemDetailsModal({
   const hasSizeChoice = categoryInfo ? categoryInfo.sizes.length > 1 : true;
 
   const changeCategory = (next: string | null) => {
+    touched.current.add('category');
     setCategory(next);
     const info = taxonomy?.categories.find((c) => c.name === next);
     // Subcategory and size options depend on the category; drop values that no longer apply.
@@ -132,12 +202,13 @@ export function ItemDetailsModal({
                     label="Brand"
                     value={brand}
                     options={brandOptions}
-                    onChange={setBrand}
+                    onChange={edit('brand', setBrand)}
                     placeholder="Select or type a brand"
                     allowCustom
+                    loading={fieldLoading('brand')}
                   />
                   {brandSuggestion ? (
-                    <Pressable onPress={() => setBrand(brandSuggestion)}>
+                    <Pressable onPress={() => edit('brand', setBrand)(brandSuggestion)}>
                       <ThemedText style={styles.suggestion}>
                         Did you mean <ThemedText style={styles.suggestionBrand}>{brandSuggestion}</ThemedText>?
                       </ThemedText>
@@ -149,6 +220,7 @@ export function ItemDetailsModal({
                   value={category}
                   options={taxonomy.categories.map((c) => c.name)}
                   onChange={changeCategory}
+                  loading={fieldLoading('category')}
                 />
                 {categoryInfo ? (
                   <>
@@ -156,10 +228,17 @@ export function ItemDetailsModal({
                       label="Subcategory"
                       value={subcategory}
                       options={categoryInfo.subcategories}
-                      onChange={setSubcategory}
+                      onChange={edit('subcategory', setSubcategory)}
+                      loading={fieldLoading('subcategory')}
                     />
                     {hasSizeChoice ? (
-                      <SearchableSelect label="Size" value={size} options={categoryInfo.sizes} onChange={setSize} />
+                      <SearchableSelect
+                        label="Size"
+                        value={size}
+                        options={categoryInfo.sizes}
+                        onChange={edit('size', setSize)}
+                        loading={fieldLoading('size')}
+                      />
                     ) : null}
                   </>
                 ) : null}

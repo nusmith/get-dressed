@@ -45,7 +45,13 @@ def call_openai(prompt: str, model: str = "gpt-4o-mini", api_key: Optional[str] 
     return message.get("content", "")
 
 
-def call_openai_json(system: str, user: str | list[dict], model: str = "gpt-4o-mini", api_key: Optional[str] = None) -> str:
+def call_openai_json(
+    system: str,
+    user: str | list[dict],
+    model: str = "gpt-4o-mini",
+    api_key: Optional[str] = None,
+    temperature: float = 0,
+) -> str:
     """Call Chat Completions in JSON mode and return the raw JSON string.
 
     `user` is either plain text or a list of content parts (text and image_url).
@@ -67,7 +73,7 @@ def call_openai_json(system: str, user: str | list[dict], model: str = "gpt-4o-m
         ],
         "response_format": {"type": "json_object"},
         "max_tokens": 3000,
-        "temperature": 0,
+        "temperature": temperature,
     }
 
     try:

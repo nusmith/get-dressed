@@ -168,6 +168,7 @@ export default function UploadScreen() {
             visible={detailsOpen}
             imageUri={selectedImage}
             initialName={name.trim()}
+            autofill
             busy={uploading}
             error={uploadError}
             onCancel={() => setDetailsOpen(false)}
