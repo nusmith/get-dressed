@@ -27,6 +27,8 @@ export default function MyClosetScreen() {
   const [error, setError] = useState<string | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
   const { width: windowWidth } = useWindowDimensions();
+  // Touch screens have no hover, so tapping a card reveals its name (one card at a time).
+  const [revealedId, setRevealedId] = useState<string | null>(null);
   const cardWidth = gridWidth ? cardWidthFor(gridWidth) : MIN_CARD_WIDTH;
   useFocusEffect(
     useCallback(() => {
@@ -83,7 +85,14 @@ export default function MyClosetScreen() {
                 onLayout={(event) => setGridWidth(event.nativeEvent.layout.width)}
                 showsVerticalScrollIndicator={false}>
                 {items.map((item) => (
-                  <ClosetCard key={item.id} item={item} width={cardWidth} />
+                  <ClosetCard
+                    key={item.id}
+                    item={item}
+                    width={cardWidth}
+                    revealed={revealedId === item.id}
+                    onToggleReveal={() => setRevealedId((id) => (id === item.id ? null : item.id))}
+                    onHoverOut={() => setRevealedId((id) => (id === item.id ? null : id))}
+                  />
                 ))}
               </ScrollView>
               <Pressable style={styles.footerLink} onPress={() => router.push('/upload')}>
@@ -99,11 +108,27 @@ export default function MyClosetScreen() {
   );
 }
 
-function ClosetCard({ item, width }: { item: ClosetItem; width: number }) {
+type ClosetCardProps = {
+  item: ClosetItem;
+  width: number;
+  revealed: boolean;
+  onToggleReveal: () => void;
+  onHoverOut: () => void;
+};
+
+function ClosetCard({ item, width, revealed, onToggleReveal, onHoverOut }: ClosetCardProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
-    <Pressable style={[styles.card, { width }]} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}>
+    <Pressable
+      style={[styles.card, { width }]}
+      onPress={onToggleReveal}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => {
+        setHovered(false);
+        // A click on desktop shouldn't leave the name pinned after the mouse leaves.
+        onHoverOut();
+      }}>
       {item.image_url ? (
         <Image source={{ uri: item.image_url }} style={styles.image} resizeMode="cover" />
       ) : (
@@ -111,7 +136,7 @@ function ClosetCard({ item, width }: { item: ClosetItem; width: number }) {
           <ThemedText style={styles.placeholderText}>No image</ThemedText>
         </ThemedView>
       )}
-      {hovered ? (
+      {hovered || revealed ? (
         <View style={styles.hoverOverlay} pointerEvents="none">
           <ThemedText style={styles.hoverTitle} numberOfLines={2}>
             {item.name}
