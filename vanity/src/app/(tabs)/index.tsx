@@ -70,12 +70,18 @@ export default function GetDressedScreen() {
     [occasion, note]
   );
 
+  // The focus callback below is created once, so it reads the latest state through this ref;
+  // reading `suggestion` directly would always see the first render's null and re-pick every visit.
+  const latest = useRef({ suggestion, pending, load });
+  latest.current = { suggestion, pending, load };
+
   // Pick an outfit the first time the tab is shown, and again after an empty closet gets more pieces.
+  // Coming back to the tab otherwise keeps today's outfit.
   useFocusEffect(
     useCallback(() => {
-      if (pending) return;
-      if (!suggestion || suggestion.closet_count < MIN_CLOSET_ITEMS) load({}, 'outfit');
-      // Deliberately runs with the state from the last render rather than re-subscribing on every change.
+      const { suggestion: current, pending: busy, load: pick } = latest.current;
+      if (busy) return;
+      if (!current || current.closet_count < MIN_CLOSET_ITEMS) pick({}, 'outfit');
     }, [])
   );
 
