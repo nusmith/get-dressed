@@ -4,12 +4,13 @@ Only the read-only scope is requested; the app never sends, modifies, or deletes
 """
 
 import base64
-import os
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 from fastapi import HTTPException
+
+from api.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
 
 GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -29,12 +30,9 @@ class GmailAuthRevoked(Exception):
 
 
 def _config() -> tuple[str, str, str]:
-    client_id = os.getenv("GOOGLE_CLIENT_ID", "")
-    client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8081/upload")
-    if not client_id or not client_secret:
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not configured on server")
-    return client_id, client_secret, redirect_uri
+    return GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
 
 
 def build_auth_url(state: str) -> str:

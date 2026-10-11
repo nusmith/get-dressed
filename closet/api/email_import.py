@@ -25,7 +25,7 @@ from api.closet_store import save_closet_item, user_brands
 from api.email_security import decrypt_token, encrypt_token, sign, verify
 from api.item_style import describe_item
 from api.receipts import download_image, extract_items, normalize_item_name, retailer_from_sender
-from api.supabase_client import supabase
+from api.supabase_client import db
 from api.taxonomy import DETAIL_KEYS, ItemDetails, clean_item_details
 
 router = APIRouter(prefix="/email")
@@ -54,15 +54,9 @@ class ImportPayload(BaseModel):
     proposals: list[ImportProposal]
 
 
-def _db():
-    if supabase is None:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured")
-    return supabase
-
-
 def _get_connection(user_id: str) -> dict[str, Any] | None:
     rows = (
-        _db().table("email_connections")
+        db().table("email_connections")
         .select("email,encrypted_refresh_token,last_scanned_at")
         .eq("user_id", user_id)
         .eq("provider", "gmail")
@@ -72,12 +66,12 @@ def _get_connection(user_id: str) -> dict[str, Any] | None:
 
 
 def _delete_connection(user_id: str) -> None:
-    _db().table("email_connections").delete().eq("user_id", user_id).eq("provider", "gmail").execute()
+    db().table("email_connections").delete().eq("user_id", user_id).eq("provider", "gmail").execute()
 
 
 def _imported_keys(user_id: str) -> set[str]:
     rows = (
-        _db().table("closet")
+        db().table("closet")
         .select("metadata")
         .eq("user_id", user_id)
         .eq("metadata->>source", "gmail")
@@ -135,7 +129,7 @@ def google_connect(request: Request, payload: ConnectPayload) -> dict[str, Any]:
     if existing:
         gmail.revoke_token(decrypt_token(existing["encrypted_refresh_token"]))
 
-    _db().table("email_connections").upsert(
+    db().table("email_connections").upsert(
         {
             "user_id": user_id,
             "provider": "gmail",
@@ -237,7 +231,7 @@ def email_scan(request: Request) -> dict[str, Any]:
             }
         )
 
-    _db().table("email_connections").update({"last_scanned_at": _now_iso()}).eq("user_id", user_id).eq(
+    db().table("email_connections").update({"last_scanned_at": _now_iso()}).eq("user_id", user_id).eq(
         "provider", "gmail"
     ).execute()
 

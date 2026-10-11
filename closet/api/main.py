@@ -1,5 +1,4 @@
 import base64
-import os
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -7,13 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from api.auth import get_user_id_from_request
-from api.closet_store import closet_item_payload, fetch_closet_rows, save_closet_item, user_brands
+from api.closet_store import closet_item_payload, fetch_closet_rows, save_closet_item, update_metadata, user_brands
+from api.config import ALLOWED_ORIGINS
 from api.email_import import router as email_router
-from api.supabase_client import supabase
 from api.taxonomy import DETAIL_KEYS, ItemDetails, clean_item_details, taxonomy_payload
 from api.item_style import describe_item, describe_missing, suggest_details
 from api.style_analysis import analyze_closet
-from api.openai_client import call_openai
 from api.outfits import SuggestOutfitRequest, suggest_outfit
 
 app = FastAPI(title="Closet API")
@@ -21,12 +19,9 @@ app = FastAPI(title="Closet API")
 # About 20 MB of base64, for a photo up to the 15 MB the model is sent.
 MAX_IMAGE_DATA_LENGTH = 21_000_000
 
-# TODO clean this up and move to a config file or environment variables
-allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:19006,http://127.0.0.1:19006,http://localhost:8081,http://127.0.0.1:8081").split(",") if origin.strip()]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
@@ -43,11 +38,6 @@ class UploadPayload(BaseModel):
     image_data: str
     user_id: str | None = None
     details: ItemDetails | None = None
-
-
-class GenerateLookRequest(BaseModel):
-    prompt: str
-    model: str | None = None
 
 
 class SuggestDetailsPayload(BaseModel):
@@ -99,24 +89,15 @@ class UpdateDetailsPayload(BaseModel):
 def update_closet_item_details(request: Request, item_id: str, payload: UpdateDetailsPayload) -> dict[str, Any]:
     """Replace an item's brand/category/subcategory/size. Name, photo and source are not editable here."""
     user_id = get_user_id_from_request(request)
-    if supabase is None:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured")
-
     details = clean_item_details(payload.details.model_dump(), known_brands=user_brands(user_id))
 
-    # Scope by user_id as well as id so nobody can edit another user's item.
-    rows = (
-        supabase.table("closet").select("metadata").eq("id", item_id).eq("user_id", user_id).execute()
-    ).data or []
-    if not rows:
+    def replace_details(existing: dict[str, Any]) -> dict[str, Any]:
+        # Keep everything that isn't a detail (source, Gmail import info); cleared details are removed.
+        # Saving the details confirms them, so none count as auto-filled any more.
+        return {k: v for k, v in existing.items() if k not in DETAIL_KEYS and k != "auto_filled"} | details
+
+    if update_metadata(user_id, item_id, replace_details) is None:
         raise HTTPException(status_code=404, detail="Closet item not found")
-
-    # Keep everything that isn't a detail (source, Gmail import info); cleared details are removed.
-    existing = rows[0].get("metadata") or {}
-    # Saving the details confirms them, so none count as auto-filled any more.
-    metadata = {k: v for k, v in existing.items() if k not in DETAIL_KEYS and k != "auto_filled"} | details
-
-    supabase.table("closet").update({"metadata": metadata}).eq("id", item_id).eq("user_id", user_id).execute()
     return {"id": item_id, **{k: details.get(k) for k in DETAIL_KEYS}}
 
 
@@ -187,18 +168,3 @@ def suggest_user_outfit(
     # Undescribed items are picked by name alone; describe them for next time.
     background_tasks.add_task(describe_missing, user_id, rows)
     return suggest_outfit(rows, payload)
-
-
-@app.post("/generate_look")
-def generate_look(request: Request, payload: GenerateLookRequest) -> dict[str, Any]:
-    """Proxy endpoint to call OpenAI from the server side using OPENAI_API_KEY."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured on server")
-
-    try:
-        result = call_openai(payload.prompt, model=payload.model or "gpt-4o-mini", api_key=api_key)
-    except Exception as exc:  # pragma: no cover - surface API errors
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    return {"result": result}

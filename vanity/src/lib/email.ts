@@ -1,7 +1,5 @@
-import { getAccessToken } from './supabase';
+import { request } from './http';
 import type { ItemDetails } from './taxonomy';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
 export type EmailStatus = {
   connected: boolean;
@@ -26,24 +24,6 @@ export type ImportResult = {
   status: 'added' | 'already_added';
   image_error?: string | null;
 };
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = await getAccessToken();
-  const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
-  if (init.body) headers['Content-Type'] = 'application/json';
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
-  if (!response.ok) {
-    const text = await response.text();
-    let message = text;
-    try {
-      message = JSON.parse(text).detail ?? text;
-    } catch {}
-    throw new Error(message || `Request failed (${response.status})`);
-  }
-  return response.json();
-}
 
 export function fetchEmailStatus() {
   return request<EmailStatus>('/email/status');

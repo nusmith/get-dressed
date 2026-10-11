@@ -123,6 +123,8 @@ def brand_key(brand: str) -> str:
     without_accents = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]", "", without_accents.lower())
 DETAIL_KEYS = ("brand", "category", "subcategory", "size")
+# Left out of outfit suggestions and the My Style analysis.
+EXCLUDED_CATEGORIES = frozenset({"Intimates"})
 
 
 def sizes_for(category: str) -> list[str]:
