@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -12,36 +12,37 @@ export default function MyClosetScreen() {
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let isActive = true;
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
 
-    const loadCloset = async () => {
-      try {
-        setLoading(true);
-        setHasLoaded(false);
-        setError(null);
-        const closetItems = await fetchUserClosetItems();
-        if (isActive) {
-          setItems(closetItems);
+      const loadCloset = async () => {
+        try {
+          setLoading(true);
+          setError(null);
+          const closetItems = await fetchUserClosetItems();
+          if (isActive) {
+            setItems(closetItems);
+          }
+        } catch (err) {
+          if (isActive) {
+            setError(err instanceof Error ? err.message : 'Could not load your closet');
+          }
+        } finally {
+          if (isActive) {
+            setHasLoaded(true);
+            setLoading(false);
+          }
         }
-      } catch (err) {
-        if (isActive) {
-          setError(err instanceof Error ? err.message : 'Could not load your closet');
-        }
-      } finally {
-        if (isActive) {
-          setHasLoaded(true);
-          setLoading(false);
-        }
-      }
-    };
+      };
 
-    loadCloset();
+      loadCloset();
 
-    return () => {
-      isActive = false;
-    };
-  }, []);
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
 
   return (
     <ThemedView style={styles.container}> 
@@ -60,16 +61,12 @@ export default function MyClosetScreen() {
             </ThemedText>
           ) : (
             <>
-              <FlatList
-                data={items}
+              <ScrollView
                 style={{ width: '100%' }}
-                keyExtractor={(item) => item.id}
-                numColumns={4}
                 contentContainerStyle={styles.listContent}
-                columnWrapperStyle={styles.columnWrapper}
-                showsVerticalScrollIndicator={false}
-                renderItem={({ item }) => (
-                  <View style={styles.card}>
+                showsVerticalScrollIndicator={false}>
+                {items.map((item) => (
+                  <View key={item.id} style={styles.card}>
                     {item.image_url ? (
                       <Image source={{ uri: item.image_url }} style={styles.image} resizeMode="cover" />
                     ) : (
@@ -78,8 +75,8 @@ export default function MyClosetScreen() {
                       </ThemedView>
                     )}
                   </View>
-                )}
-              />
+                ))}
+              </ScrollView>
               <Pressable style={styles.footerLink} onPress={() => router.push('/upload')}>
                 <ThemedText style={styles.footerLinkText}>Add More</ThemedText>
               </Pressable>
@@ -132,15 +129,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   listContent: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 8,
     paddingTop: 8,
     paddingBottom: 8,
   },
-  columnWrapper: {
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
   card: {
-    width: '23%',
+    width: 160,
     aspectRatio: 1,
     borderRadius: 12,
     overflow: 'hidden',
