@@ -86,7 +86,7 @@ def get_user_closet_brands(request: Request) -> dict[str, list[str]]:
 def get_user_closet(request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
     user_id = get_user_id_from_request(request)
     rows = fetch_closet_rows(user_id)
-    # Describe any photos that haven't been yet (older items, or a run that failed after saving).
+    # Describe any photos that have no description yet (a run that failed after saving).
     background_tasks.add_task(describe_missing, user_id, rows)
     return {"items": [closet_item_payload(row) for row in rows]}
 

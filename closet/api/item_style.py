@@ -1,8 +1,8 @@
 """Describe what a closet item looks like from its photo, so outfits can match colors and dressiness.
 
-Runs in the background after an item is saved, so it never slows down the save. Items that don't
-have a current description yet (older items, or ones whose run failed) are picked up when the closet
-or an outfit is loaded. The result is stored as closet.metadata.style.
+Runs in the background after an item is saved, so it never slows down the save. Items with no
+description at all (a run that failed after saving) are picked up when the closet or an outfit is
+loaded. The result is stored as closet.metadata.style.
 
 The same pass fills in brand, category and subcategory when the user left them empty, and the size
 from the user's usual size for that kind of item, so nobody has to fill those in by hand. Details the
@@ -29,7 +29,8 @@ from api.supabase_client import supabase
 from api.taxonomy import BRANDS, CATEGORIES, brand_key, clean_item_details, sizes_for
 
 STYLE_MODEL = "gpt-4o"
-# Bump when the prompt asks for something new, so existing items are described again once.
+# Bump when the prompt asks for something new. Recorded with each description; existing items are
+# not re-described automatically, which needs a deliberate backfill run.
 # 2: also fills in empty brand, category and subcategory.
 # 3: also fills in an empty size from the user's usual size.
 # 4: colors come from COLORS, so the closet's palette can be charted.
@@ -293,11 +294,9 @@ def describe_item(user_id: str, item_id: str, name: str, image_path: str, image_
 
 
 def describe_missing(user_id: str, rows: list[dict[str, Any]]) -> None:
-    """Describe closet rows that have a photo but no current description."""
+    """Describe closet rows that have a photo but no description. Older versions are left alone."""
     pending = [
-        row
-        for row in rows
-        if row.get("image_path") and ((row.get("metadata") or {}).get("style") or {}).get("v", 1) < STYLE_VERSION
+        row for row in rows if row.get("image_path") and not (row.get("metadata") or {}).get("style")
     ][:MAX_BACKFILL]
     if not pending:
         return
