@@ -43,3 +43,42 @@ def call_openai(prompt: str, model: str = "gpt-4o-mini", api_key: Optional[str] 
     first = choices[0]
     message = first.get("message", {})
     return message.get("content", "")
+
+
+def call_openai_json(system: str, user: str | list[dict], model: str = "gpt-4o-mini", api_key: Optional[str] = None) -> str:
+    """Call Chat Completions in JSON mode and return the raw JSON string.
+
+    `user` is either plain text or a list of content parts (text and image_url).
+    """
+    key = api_key or os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "response_format": {"type": "json_object"},
+        "max_tokens": 1500,
+        "temperature": 0,
+    }
+
+    try:
+        resp = httpx.post(OPENAI_API_URL, json=payload, headers=headers, timeout=60.0)
+    except Exception as exc:
+        raise RuntimeError(f"OpenAI request failed: {exc}") from exc
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"OpenAI error {resp.status_code}: {resp.text}")
+
+    choices = resp.json().get("choices") or []
+    if not choices:
+        return "{}"
+    return choices[0].get("message", {}).get("content") or "{}"
