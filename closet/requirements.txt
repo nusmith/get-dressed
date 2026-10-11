@@ -3,3 +3,5 @@ uvicorn[standard]
 supabase
 python-dotenv
 openai
+httpx
+cryptography

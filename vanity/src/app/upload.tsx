@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Alert, Image, Platform, Pressable, StyleSheet, TextInput } from 'react-native';
+import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
+import { EmailImport } from '@/components/email-import';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { uploadImage } from '@/lib/api';
@@ -79,7 +80,7 @@ export default function UploadScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.content}>
+        <ScrollView contentContainerStyle={styles.content}>
           <ThemedText style={styles.subtitle}>
             Upload images from your closet
           </ThemedText>
@@ -143,7 +144,8 @@ export default function UploadScreen() {
               </ThemedText>
             </Pressable>
           )}
-        </ThemedView>
+          {!selectedImage ? <EmailImport /> : null}
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -157,10 +159,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+    // The web tab bar floats over the top of the page (see app-tabs.web.tsx).
+    paddingTop: Platform.OS === 'web' ? 120 : 24,
+    paddingBottom: 80,
     gap: 12,
   },
   subtitle: {
