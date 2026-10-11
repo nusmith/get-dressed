@@ -3,16 +3,18 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000'
 
 
 import { getAccessToken } from './supabase';
+import type { ItemDetails } from './taxonomy';
 
-export type ClosetItem = {
+export type ClosetItem = ItemDetails & {
   id: string;
   name: string;
   image_path: string;
   image_url: string | null;
   created_at?: string;
+  source?: 'gmail' | 'manual' | null;
 };
 
-export async function uploadImage(imageUri: string, filename: string, name: string) {
+export async function uploadImage(imageUri: string, filename: string, name: string, details?: ItemDetails) {
   const token = await getAccessToken();
 
   const headers: Record<string, string> = {
@@ -40,6 +42,7 @@ export async function uploadImage(imageUri: string, filename: string, name: stri
       name,
       content_type: 'image/jpeg',
       image_data: imageData,
+      details,
     }),
   });
 
@@ -94,4 +97,39 @@ async function blobUrlToBase64(blobUrl: string): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+}
+
+export async function updateClosetItemDetails(id: string, details: ItemDetails): Promise<ItemDetails> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/closet/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ details }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let message = errorText;
+    try {
+      message = JSON.parse(errorText).detail ?? errorText;
+    } catch {}
+    throw new Error(message || 'Could not save changes');
+  }
+
+  return response.json();
+}
+
+/** Brands already used in the signed-in user's closet. */
+export async function fetchUserBrands(): Promise<string[]> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/closet/brands`, { headers });
+  if (!response.ok) throw new Error('Could not load your brands');
+  const data = await response.json();
+  return data.brands ?? [];
 }

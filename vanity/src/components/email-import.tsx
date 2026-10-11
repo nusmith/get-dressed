@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
+import { ItemDetailsModal } from '@/components/item-details-modal';
 import { StepHeading } from '@/components/step-heading';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -15,6 +16,7 @@ import {
   type EmailProposal,
   type EmailStatus,
 } from '@/lib/email';
+import type { ItemDetails } from '@/lib/taxonomy';
 
 // Drop Google's ?code&state&scope from the address bar once they've been used.
 // router.replace() to the current route keeps query params, so edit history directly (web only).
@@ -37,6 +39,9 @@ export function EmailImport() {
   const [proposals, setProposals] = useState<EmailProposal[] | null>(null);
   const [adding, setAdding] = useState<Set<string>>(new Set());
   const [added, setAdded] = useState<Set<string>>(new Set());
+  const [reviewing, setReviewing] = useState<EmailProposal | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchEmailStatus()
@@ -105,17 +110,34 @@ export function EmailImport() {
     }
   };
 
-  const handleAdd = async (items: EmailProposal[]) => {
+  // "Add all": one click, using what the scan inferred.
+  const handleAddAll = async (items: EmailProposal[]) => {
     const keys = items.map((p) => p.key);
     setAdding((prev) => new Set([...prev, ...keys]));
     setError(null);
     try {
-      const results = await importProposals(items.map((p) => p.token));
+      const results = await importProposals(items.map((p) => ({ token: p.token })));
       setAdded((prev) => new Set([...prev, ...results.map((r) => r.key)]));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add items');
     } finally {
       setAdding((prev) => new Set([...prev].filter((k) => !keys.includes(k))));
+    }
+  };
+
+  // "Add": review the details first, starting from what the scan inferred.
+  const handleConfirmDetails = async (name: string, details: ItemDetails) => {
+    if (!reviewing) return;
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      const results = await importProposals([{ token: reviewing.token, name, details }]);
+      setAdded((prev) => new Set([...prev, ...results.map((r) => r.key)]));
+      setReviewing(null);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : 'Could not add item');
+    } finally {
+      setReviewBusy(false);
     }
   };
 
@@ -132,6 +154,16 @@ export function EmailImport() {
 
   return (
     <ThemedView style={styles.card}>
+      <ItemDetailsModal
+        visible={reviewing !== null}
+        imageUri={reviewing?.image_url}
+        initialName={reviewing?.name ?? ''}
+        initialDetails={reviewing ?? undefined}
+        busy={reviewBusy}
+        error={reviewError}
+        onCancel={() => setReviewing(null)}
+        onConfirm={handleConfirmDetails}
+      />
       <StepHeading step={2} title="Import from email" />
 
       {status === null || busy === 'connecting' ? (
@@ -184,7 +216,7 @@ export function EmailImport() {
                 Found {proposals.length} item{proposals.length === 1 ? '' : 's'}
               </ThemedText>
               {pending.length > 1 ? (
-                <Pressable disabled={adding.size > 0} onPress={() => handleAdd(pending)}>
+                <Pressable disabled={adding.size > 0} onPress={() => handleAddAll(pending)}>
                   <ThemedText style={styles.linkText}>Add all</ThemedText>
                 </Pressable>
               ) : null}
@@ -212,7 +244,10 @@ export function EmailImport() {
                     <Pressable
                       disabled={isAdded || isAdding}
                       style={[styles.addButton, isAdded && styles.addButtonDone]}
-                      onPress={() => handleAdd([proposal])}>
+                      onPress={() => {
+                        setReviewError(null);
+                        setReviewing(proposal);
+                      }}>
                       <ThemedText style={[styles.addButtonText, isAdded && styles.addButtonTextDone]}>
                         {isAdded ? 'Added' : isAdding ? 'Adding...' : 'Add'}
                       </ThemedText>
