@@ -8,6 +8,7 @@ kept items are forced in, and each kind of piece appears at most once.
 import json
 import os
 import random
+from collections import Counter
 from datetime import date
 from typing import Any
 
@@ -27,6 +28,9 @@ TEMPERATURE = 0.6
 
 # Never suggested as part of an outfit.
 EXCLUDED_CATEGORIES = {"Intimates"}
+# Pieces that make up the body of an outfit, as opposed to shoes, bags and accessories.
+GARMENT_CATEGORIES = {"Top", "Bottom", "Dress", "Outerwear", "Set", "Activewear", "Swimwear"}
+MAX_SAME_COLOR_GARMENTS = 2
 # How many of each category an outfit may hold; categories not listed allow one.
 CATEGORY_LIMITS = {"Accessory": 2, "Jewelry": 2}
 # Order pieces are shown in on the outfit card, head to toe; uncategorized items go last.
@@ -50,7 +54,9 @@ Pick pieces whose colors, formality and season work together and suit the occasi
 - Dress for the season today's date implies (northern hemisphere) unless the notes say otherwise.
   Skip summer-only pieces in fall and winter, or layer them under something warmer.
 - Keep the whole outfit at a similar level of dressiness; match shoes to the occasion.
-- A cardigan, jacket or other layer goes over a top or dress, never on its own."""
+- A cardigan, jacket or other layer goes over a top or dress, never on its own.
+- At most two garments in the same main color (no denim jacket with a denim shirt and jeans).
+  The top and bottom should contrast unless it's a deliberate tonal look."""
 
 
 class SuggestOutfitRequest(BaseModel):
@@ -127,6 +133,37 @@ def suggest_outfit(closet_rows: list[dict[str, Any]], request: SuggestOutfitRequ
     lines.append("Closet:")
     lines.extend(f"{n}. {_describe(row)}" for n, row in enumerate(candidates, start=1))
 
+    outfit = _pick(lines, candidates, keep_ids, by_id)
+    # The model sometimes ignores the color rule, so check it and ask once more, naming the problem.
+    problem = _color_problem(outfit)
+    if problem:
+        retry = _pick([*lines, "", f"Your last pick had {problem}. Pick again without that."], candidates, keep_ids, by_id)
+        if not _color_problem(retry):
+            outfit = retry
+
+    if not outfit:
+        raise HTTPException(status_code=502, detail="Couldn't put an outfit together. Try again.")
+
+    outfit.sort(key=_display_rank)
+    return {"items": [closet_item_payload(row) for row in outfit], "closet_count": closet_count}
+
+
+def _color_problem(outfit: list[dict[str, Any]]) -> str | None:
+    """Describes it when more garments share one main color than the prompt allows."""
+    main_colors = Counter(
+        colors[0]
+        for row in outfit
+        if _category(row) in GARMENT_CATEGORIES
+        and (colors := ((row.get("metadata") or {}).get("style") or {}).get("colors"))
+    )
+    color, count = main_colors.most_common(1)[0] if main_colors else (None, 0)
+    return f"{count} {color} garments" if count > MAX_SAME_COLOR_GARMENTS else None
+
+
+def _pick(
+    lines: list[str], candidates: list[dict[str, Any]], keep_ids: list[str], by_id: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Ask the model for an outfit and keep only what checks out: known items, kept ones, one per job."""
     try:
         raw = call_openai_json(
             SYSTEM_PROMPT,
@@ -155,10 +192,4 @@ def suggest_outfit(closet_rows: list[dict[str, Any]], request: SuggestOutfitRequ
                 continue
             per_category[category] = per_category.get(category, 0) + 1
         outfit.append(row)
-    outfit = outfit[:MAX_OUTFIT_ITEMS]
-
-    if not outfit:
-        raise HTTPException(status_code=502, detail="Couldn't put an outfit together. Try again.")
-
-    outfit.sort(key=_display_rank)
-    return {"items": [closet_item_payload(row) for row in outfit], "closet_count": closet_count}
+    return outfit[:MAX_OUTFIT_ITEMS]

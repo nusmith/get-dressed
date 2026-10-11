@@ -99,6 +99,14 @@ export default function MyClosetScreen() {
             </ThemedText>
           ) : (
             <>
+              <View style={styles.toolbar}>
+                <Pressable
+                  accessibilityLabel="Add to closet"
+                  style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+                  onPress={() => router.push('/upload')}>
+                  <ThemedText style={styles.addButtonText}>+ Add</ThemedText>
+                </Pressable>
+              </View>
               <ScrollView
                 style={{ width: '100%' }}
                 contentContainerStyle={styles.listContent}
@@ -131,9 +139,6 @@ export default function MyClosetScreen() {
                 onCancel={() => setEditing(null)}
                 onConfirm={handleSaveDetails}
               />
-              <Pressable style={styles.footerLink} onPress={() => router.push('/upload')}>
-                <ThemedText style={styles.footerLinkText}>Add More</ThemedText>
-              </Pressable>
           </>
           )}
 
@@ -269,13 +274,23 @@ const styles = StyleSheet.create({
     fontSize: 10,
     opacity: 0.7,
   },
-  footerLink: {
-    marginTop: 'auto',
-    paddingTop: 12,
-    alignItems: 'center',
+  toolbar: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingBottom: 4,
   },
-  footerLinkText: {
-    color: '#4f46e5',
+  addButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#4f46e5',
+  },
+  addButtonText: {
+    color: 'white',
     fontWeight: '600',
+  },
+  pressed: {
+    opacity: 0.7,
   },
 });
