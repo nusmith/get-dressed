@@ -6,7 +6,6 @@ kept items are forced in, and each kind of piece appears at most once.
 """
 
 import json
-import os
 import random
 from collections import Counter
 from datetime import date
@@ -15,19 +14,17 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from api.closet_store import closet_item_payload
+from api.closet_store import closet_item_payload, meta, style_of
+from api.config import OUTFIT_MODEL
 from api.openai_client import call_openai_json
+from api.taxonomy import EXCLUDED_CATEGORIES
 
 MIN_CLOSET_ITEMS = 3
 MAX_OUTFIT_ITEMS = 6
 MAX_PROMPT_ITEMS = 400
-# gpt-4o-mini doubled up pieces (two pairs of shoes, a dress with slacks) and ignored the season.
-OUTFIT_MODEL = "gpt-4o"
 # Some variety, so Shuffle gives a different outfit each time.
 TEMPERATURE = 0.6
 
-# Never suggested as part of an outfit.
-EXCLUDED_CATEGORIES = {"Intimates"}
 # Pieces that make up the body of an outfit, as opposed to shoes, bags and accessories.
 GARMENT_CATEGORIES = {"Top", "Bottom", "Dress", "Outerwear", "Set", "Activewear", "Swimwear"}
 MAX_SAME_COLOR_GARMENTS = 2
@@ -73,15 +70,15 @@ class SuggestOutfitRequest(BaseModel):
 
 
 def _category(row: dict[str, Any]) -> str | None:
-    return (row.get("metadata") or {}).get("category")
+    return meta(row).get("category")
 
 
 def _describe(row: dict[str, Any]) -> str:
-    metadata = row.get("metadata") or {}
+    metadata = meta(row)
     kind = " / ".join(v for v in (metadata.get("category"), metadata.get("subcategory")) if v)
     parts = [str(row.get("name") or "Unnamed item"), kind or "no category", metadata.get("brand")]
     # What the photo shows (see item_style.py); missing until the item has been described.
-    style = metadata.get("style") or {}
+    style = style_of(row)
     looks = [
         ", ".join(style.get("colors") or []),
         style.get("pattern"),
@@ -154,7 +151,7 @@ def _color_problem(outfit: list[dict[str, Any]]) -> str | None:
         colors[0]
         for row in outfit
         if _category(row) in GARMENT_CATEGORIES
-        and (colors := ((row.get("metadata") or {}).get("style") or {}).get("colors"))
+        and (colors := style_of(row).get("colors"))
     )
     color, count = main_colors.most_common(1)[0] if main_colors else (None, 0)
     return f"{count} {color} garments" if count > MAX_SAME_COLOR_GARMENTS else None
@@ -169,7 +166,6 @@ def _pick(
             SYSTEM_PROMPT,
             "\n".join(lines),
             model=OUTFIT_MODEL,
-            api_key=os.getenv("OPENAI_API_KEY"),
             temperature=TEMPERATURE,
         )
         answer = json.loads(raw)

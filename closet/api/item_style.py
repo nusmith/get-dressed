@@ -23,12 +23,12 @@ from typing import Any
 
 import httpx
 
-from api.closet_store import user_brands, user_sizes
+from api.closet_store import style_of, update_metadata, user_set_details
+from api.config import STYLE_MODEL
 from api.openai_client import call_openai_json
-from api.supabase_client import supabase
+from api.supabase_client import db
 from api.taxonomy import BRANDS, CATEGORIES, brand_key, clean_item_details, sizes_for
 
-STYLE_MODEL = "gpt-4o"
 # Bump when the prompt asks for something new. Recorded with each description; existing items are
 # not re-described automatically, which needs a deliberate backfill run.
 # 2: also fills in empty brand, category and subcategory.
@@ -209,33 +209,29 @@ def analyze_photo(image_bytes: bytes, name: str) -> dict[str, Any]:
 
 def suggest_details(user_id: str, image_bytes: bytes, name: str) -> dict[str, str]:
     """Brand, category, subcategory and size to pre-fill the upload form with."""
-    return _fill_details(
-        {}, analyze_photo(image_bytes, name), user_brands(user_id, include_auto_filled=False), user_sizes(user_id)
-    )
+    return _fill_details({}, analyze_photo(image_bytes, name), *user_set_details(user_id))
 
 
 def _describe_once(user_id: str, item_id: str, name: str, image_path: str, image_bytes: bytes | None) -> None:
-    if supabase is None:
-        return
     if image_bytes is None:
-        image_bytes = supabase.storage.from_("images").download(image_path)
+        image_bytes = db().storage.from_("images").download(image_path)
     raw = analyze_photo(image_bytes, name)
     style = _clean_style(raw)
     if style is None:
         raise ValueError("model returned no usable description")
 
-    # Read-modify-write right before saving, so details the user edited meanwhile are kept.
-    rows = (
-        supabase.table("closet").select("metadata").eq("id", item_id).eq("user_id", user_id).execute()
-    ).data or []
-    if not rows:
+    known_brands, sizes = user_set_details(user_id)
+    fill: dict[str, str] = {}
+
+    def add_description(existing: dict[str, Any]) -> dict[str, Any]:
+        fill.update(_fill_details(existing, raw, known_brands, sizes))
+        metadata = existing | fill | {"style": style}
+        if fill:
+            metadata["auto_filled"] = sorted(set(existing.get("auto_filled") or []) | fill.keys())
+        return metadata
+
+    if update_metadata(user_id, item_id, add_description) is None:
         return  # deleted while we were describing it
-    existing = rows[0].get("metadata") or {}
-    fill = _fill_details(existing, raw, user_brands(user_id, include_auto_filled=False), user_sizes(user_id))
-    metadata = existing | fill | {"style": style}
-    if fill:
-        metadata["auto_filled"] = sorted(set(existing.get("auto_filled") or []) | fill.keys())
-    supabase.table("closet").update({"metadata": metadata}).eq("id", item_id).eq("user_id", user_id).execute()
     _record_description(user_id, item_id, raw, style, fill)
 
 
@@ -248,7 +244,7 @@ def _record_description(
         for key in ("brand", "category", "subcategory")
     }
     try:
-        supabase.table("item_descriptions").insert(
+        db().table("item_descriptions").insert(
             {
                 "item_id": item_id,
                 "user_id": user_id,
@@ -296,7 +292,7 @@ def describe_item(user_id: str, item_id: str, name: str, image_path: str, image_
 def describe_missing(user_id: str, rows: list[dict[str, Any]]) -> None:
     """Describe closet rows that have a photo but no description. Older versions are left alone."""
     pending = [
-        row for row in rows if row.get("image_path") and not (row.get("metadata") or {}).get("style")
+        row for row in rows if row.get("image_path") and not style_of(row)
     ][:MAX_BACKFILL]
     if not pending:
         return

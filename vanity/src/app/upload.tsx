@@ -25,8 +25,7 @@ export default function UploadScreen() {
     try {
       setUploading(true);
       setUploadError(null);
-      const filename = `upload-${Date.now()}.jpg`;
-      await uploadImage(selectedImage, filename, finalName, details);
+      await uploadImage(selectedImage, finalName, details);
       setDetailsOpen(false);
       setSelectedImage(null);
       setName('');

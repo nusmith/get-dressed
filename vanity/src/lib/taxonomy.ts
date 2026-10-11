@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+import { request } from './http';
 
 // The values live in the backend (closet/api/taxonomy.py); this is only their shape.
 export type TaxonomyCategory = {
@@ -25,15 +25,10 @@ let cached: Promise<Taxonomy> | null = null;
 
 export function fetchTaxonomy(): Promise<Taxonomy> {
   if (!cached) {
-    cached = fetch(`${API_BASE_URL}/closet/taxonomy`)
-      .then((response) => {
-        if (!response.ok) throw new Error('Could not load categories');
-        return response.json() as Promise<Taxonomy>;
-      })
-      .catch((err) => {
-        cached = null; // allow a retry next time
-        throw err;
-      });
+    cached = request<Taxonomy>('/closet/taxonomy', {}, 'Could not load categories').catch((err) => {
+      cached = null; // allow a retry next time
+      throw err;
+    });
   }
   return cached;
 }

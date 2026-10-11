@@ -1,29 +1,20 @@
-import os
 from typing import Optional
 
+from fastapi import HTTPException
 from supabase import Client, create_client
 
-# Try to load .env for local development if python-dotenv is available
-try:
-    from dotenv import load_dotenv
-
-    # load variables from the repository root .env (closet/.env)
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
-except Exception:
-    # dotenv is optional at runtime; environment variables may already be set by the host
-    pass
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_SECRET_KEY = (
-    os.getenv("SUPABASE_SECRET_KEY")
-    or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-)
+from api.config import SUPABASE_SECRET_KEY, SUPABASE_URL
 
 supabase: Optional[Client] = None
 
 if SUPABASE_URL and SUPABASE_SECRET_KEY:
     supabase = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 else:
-    print(
-        "[closet/api] Supabase not configured: "
-        "set SUPABASE_URL and SUPABASE_SECRET_KEY"
-    )
+    print("[closet/api] Supabase not configured: set SUPABASE_URL and SUPABASE_SECRET_KEY")
+
+
+def db() -> Client:
+    """The Supabase client, or a 500 when the server isn't configured with one."""
+    if supabase is None:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured")
+    return supabase

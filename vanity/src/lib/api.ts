@@ -1,8 +1,4 @@
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000' 
-
-
-
-import { getAccessToken } from './supabase';
+import { request } from './http';
 import type { ItemDetails } from './taxonomy';
 
 export type ClosetItem = ItemDetails & {
@@ -14,81 +10,39 @@ export type ClosetItem = ItemDetails & {
   source?: 'gmail' | 'manual' | null;
 };
 
-export async function uploadImage(imageUri: string, filename: string, name: string, details?: ItemDetails) {
-  const token = await getAccessToken();
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
+export async function uploadImage(imageUri: string, name: string, details?: ItemDetails) {
   const imageData = await blobUrlToBase64(imageUri);
-  const match = imageData.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
-  const contentType = match?.[1] ?? 'image/jpeg';
-  const extension =
-    contentType === 'image/png'
-      ? 'png'
-      : contentType === 'image/webp'
-        ? 'webp'
-        : 'jpg';
-  const formatted_filename = `upload-${Date.now()}.${extension}`;
+  const contentType = imageData.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/)?.[1] ?? 'image/jpeg';
+  const extension = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg';
 
-  const response = await fetch(`${API_BASE_URL}/upload`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      filename: formatted_filename,
-      name,
-      content_type: 'image/jpeg',
-      image_data: imageData,
-      details,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'Upload failed');
-  }
-
-  return response.json();
+  return request<{ closet: { id: string; name: string; image_path: string } }>(
+    '/upload',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        filename: `upload-${Date.now()}.${extension}`,
+        name,
+        content_type: contentType,
+        image_data: imageData,
+        details,
+      }),
+    },
+    'Upload failed'
+  );
 }
 
 export async function fetchUserClosetItems(): Promise<ClosetItem[]> {
-  const token = await getAccessToken();
-  const headers: Record<string, string> = {};
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE_URL}/closet`, {
-    method: 'GET',
-    headers,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'Failed to load closet');
-  }
-
-  const data = await response.json();
+  const data = await request<{ items?: ClosetItem[] }>('/closet', {}, 'Failed to load closet');
   return data.items ?? [];
 }
 
 /** Brand, category, subcategory and size guessed from a photo (and name), to pre-fill the upload form. */
 export async function suggestItemDetails(imageUri: string, name: string): Promise<ItemDetails> {
-  const token = await getAccessToken();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const response = await fetch(`${API_BASE_URL}/closet/suggest_details`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ image_data: await blobUrlToBase64(imageUri), name }),
-  });
-  if (!response.ok) throw new Error('Could not fill in details');
-  return response.json();
+  return request<ItemDetails>(
+    '/closet/suggest_details',
+    { method: 'POST', body: JSON.stringify({ image_data: await blobUrlToBase64(imageUri), name }) },
+    'Could not fill in details'
+  );
 }
 
 async function blobUrlToBase64(blobUrl: string): Promise<string> {
@@ -114,38 +68,17 @@ async function blobUrlToBase64(blobUrl: string): Promise<string> {
   });
 }
 
-export async function updateClosetItemDetails(id: string, details: ItemDetails): Promise<ItemDetails> {
-  const token = await getAccessToken();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const response = await fetch(`${API_BASE_URL}/closet/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers,
-    body: JSON.stringify({ details }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let message = errorText;
-    try {
-      message = JSON.parse(errorText).detail ?? errorText;
-    } catch {}
-    throw new Error(message || 'Could not save changes');
-  }
-
-  return response.json();
+export function updateClosetItemDetails(id: string, details: ItemDetails): Promise<ItemDetails> {
+  return request<ItemDetails>(
+    `/closet/${encodeURIComponent(id)}`,
+    { method: 'PATCH', body: JSON.stringify({ details }) },
+    'Could not save changes'
+  );
 }
 
 /** Brands already used in the signed-in user's closet. */
 export async function fetchUserBrands(): Promise<string[]> {
-  const token = await getAccessToken();
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const response = await fetch(`${API_BASE_URL}/closet/brands`, { headers });
-  if (!response.ok) throw new Error('Could not load your brands');
-  const data = await response.json();
+  const data = await request<{ brands?: string[] }>('/closet/brands', {}, 'Could not load your brands');
   return data.brands ?? [];
 }
 
@@ -173,34 +106,22 @@ function localDate(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-export async function suggestOutfit(options: SuggestOutfitOptions = {}): Promise<OutfitSuggestion> {
-  const token = await getAccessToken();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const response = await fetch(`${API_BASE_URL}/outfits/suggest`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      occasion: options.occasion,
-      note: options.note,
-      keep_item_ids: options.keepItemIds ?? [],
-      swap_item_id: options.swapItemId,
-      previous_item_ids: options.previousItemIds ?? [],
-      today: localDate(),
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let message = errorText;
-    try {
-      message = JSON.parse(errorText).detail ?? errorText;
-    } catch {}
-    throw new Error(message || "Couldn't put an outfit together");
-  }
-
-  return response.json();
+export function suggestOutfit(options: SuggestOutfitOptions = {}): Promise<OutfitSuggestion> {
+  return request<OutfitSuggestion>(
+    '/outfits/suggest',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        occasion: options.occasion,
+        note: options.note,
+        keep_item_ids: options.keepItemIds ?? [],
+        swap_item_id: options.swapItemId,
+        previous_item_ids: options.previousItemIds ?? [],
+        today: localDate(),
+      }),
+    },
+    "Couldn't put an outfit together"
+  );
 }
 
 export type NamedCount = { name: string; count: number };
@@ -221,12 +142,6 @@ export type ClosetAnalysis = {
   gaps: string[];
 };
 
-export async function fetchClosetAnalysis(): Promise<ClosetAnalysis> {
-  const token = await getAccessToken();
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const response = await fetch(`${API_BASE_URL}/closet/analysis`, { headers });
-  if (!response.ok) throw new Error('Could not load your style');
-  return response.json();
+export function fetchClosetAnalysis(): Promise<ClosetAnalysis> {
+  return request<ClosetAnalysis>('/closet/analysis', {}, 'Could not load your style');
 }

@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from api.config import RECEIPT_MODEL
 from api.openai_client import call_openai_json
 from api.taxonomy import DETAIL_KEYS, clean_item_details, prompt_reference
 
@@ -162,7 +163,7 @@ def extract_items(message: dict[str, Any]) -> list[dict[str, Any]]:
             content.append({"type": "text", "text": f"Image {i} (alt=\"{candidates[i]['alt']}\"):"})
             content.append({"type": "image_url", "image_url": {"url": data_url, "detail": "low"}})
 
-    raw = call_openai_json(SYSTEM_PROMPT.replace("{taxonomy}", prompt_reference()), content)
+    raw = call_openai_json(SYSTEM_PROMPT.replace("{taxonomy}", prompt_reference()), content, model=RECEIPT_MODEL)
     try:
         items = json.loads(raw).get("items", [])
     except (json.JSONDecodeError, AttributeError):

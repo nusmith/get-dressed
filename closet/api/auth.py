@@ -1,7 +1,7 @@
-import os
-
 import httpx
 from fastapi import HTTPException, Request
+
+from api.config import SUPABASE_ANON_KEY, SUPABASE_URL
 
 
 def get_user_id_from_request(request: Request) -> str:
@@ -14,17 +14,15 @@ def get_user_id_from_request(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
     token = auth.split(" ", 1)[1].strip()
-    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("EXPO_PUBLIC_SUPABASE_URL", "")
-    anon_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("EXPO_PUBLIC_SUPABASE_ANON_KEY", "")
-    if not supabase_url:
+    if not SUPABASE_URL:
         raise HTTPException(status_code=500, detail="SUPABASE_URL not configured on server")
-    if not anon_key:
+    if not SUPABASE_ANON_KEY:
         raise HTTPException(status_code=500, detail="SUPABASE_ANON_KEY not configured on server")
 
-    user_endpoint = f"{supabase_url.rstrip('/')}/auth/v1/user"
+    user_endpoint = f"{SUPABASE_URL.rstrip('/')}/auth/v1/user"
     headers = {
         "Authorization": f"Bearer {token}",
-        "apikey": anon_key,
+        "apikey": SUPABASE_ANON_KEY,
         "Content-Type": "application/json",
     }
     try:

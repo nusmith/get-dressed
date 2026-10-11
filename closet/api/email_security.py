@@ -12,19 +12,19 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import time
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException
 
+from api.config import EMAIL_SECRET_KEY
+
 
 def _secret_key() -> bytes:
-    key = os.getenv("EMAIL_SECRET_KEY", "")
-    if not key:
+    if not EMAIL_SECRET_KEY:
         raise HTTPException(status_code=500, detail="EMAIL_SECRET_KEY not configured on server")
-    return key.encode()
+    return EMAIL_SECRET_KEY.encode()
 
 
 def _fernet() -> Fernet:
