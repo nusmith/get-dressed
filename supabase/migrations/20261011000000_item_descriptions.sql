@@ -33,8 +33,13 @@ create index if not exists item_descriptions_user_id_idx on public.item_descript
 alter table public.item_descriptions enable row level security;
 revoke all on public.item_descriptions from anon, authenticated;
 
--- Keep the descriptions written before this table existed. The model and the original guesses
--- weren't recorded then; every one of those runs used gpt-4o.
+-- Keep the descriptions written before this table existed, one row per described item. Seeded rows
+-- differ from rows the backend writes: created_at is when this migration ran (the original time
+-- wasn't recorded), raw holds the cleaned description rather than the model's full answer, and the
+-- guesses and filled are empty. Every run before this table used gpt-4o.
+-- Defensive on purpose, since one bad row would abort the whole migration: items must belong to an
+-- existing user (closet.user_id has no foreign key), and values that aren't the expected JSON type
+-- are skipped rather than cast.
 insert into public.item_descriptions (
   item_id, user_id, created_at, style_version, model, colors, pattern, formality, seasons, note, raw
 )
@@ -42,14 +47,24 @@ select
   c.id,
   c.user_id,
   now(),
-  coalesce((c.metadata -> 'style' ->> 'v')::integer, 1),
+  case when jsonb_typeof(s.style -> 'v') = 'number' then (s.style ->> 'v')::numeric::integer else 1 end,
   'gpt-4o',
-  coalesce(array(select jsonb_array_elements_text(c.metadata -> 'style' -> 'colors')), '{}'),
-  c.metadata -> 'style' ->> 'pattern',
-  c.metadata -> 'style' ->> 'formality',
-  coalesce(array(select jsonb_array_elements_text(c.metadata -> 'style' -> 'seasons')), '{}'),
-  c.metadata -> 'style' ->> 'note',
-  c.metadata -> 'style'
+  case
+    when jsonb_typeof(s.style -> 'colors') = 'array'
+    then array(select jsonb_array_elements_text(s.style -> 'colors'))
+    else '{}'
+  end,
+  s.style ->> 'pattern',
+  s.style ->> 'formality',
+  case
+    when jsonb_typeof(s.style -> 'seasons') = 'array'
+    then array(select jsonb_array_elements_text(s.style -> 'seasons'))
+    else '{}'
+  end,
+  s.style ->> 'note',
+  s.style
 from public.closet c
-where jsonb_typeof(c.metadata -> 'style') = 'object'
+cross join lateral (select c.metadata -> 'style' as style) s
+join auth.users u on u.id = c.user_id
+where jsonb_typeof(s.style) = 'object'
   and not exists (select 1 from public.item_descriptions d where d.item_id = c.id);
