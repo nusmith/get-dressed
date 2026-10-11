@@ -7,11 +7,23 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { fetchUserClosetItems, type ClosetItem } from '@/lib/api';
 
+const MAX_COLUMNS = 6;
+const MIN_CARD_WIDTH = 160;
+const GRID_GAP = 8;
+
+// Up to MAX_COLUMNS per row, each card stretched to share the row; fewer columns on narrow screens.
+function cardWidthFor(gridWidth: number) {
+  const columns = Math.max(1, Math.min(MAX_COLUMNS, Math.floor((gridWidth + GRID_GAP) / (MIN_CARD_WIDTH + GRID_GAP))));
+  return Math.floor((gridWidth - GRID_GAP * (columns - 1)) / columns);
+}
+
 export default function MyClosetScreen() {
   const [items, setItems] = useState<ClosetItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  const cardWidth = gridWidth ? cardWidthFor(gridWidth) : MIN_CARD_WIDTH;
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
@@ -64,17 +76,10 @@ export default function MyClosetScreen() {
               <ScrollView
                 style={{ width: '100%' }}
                 contentContainerStyle={styles.listContent}
+                onLayout={(event) => setGridWidth(event.nativeEvent.layout.width)}
                 showsVerticalScrollIndicator={false}>
                 {items.map((item) => (
-                  <View key={item.id} style={styles.card}>
-                    {item.image_url ? (
-                      <Image source={{ uri: item.image_url }} style={styles.image} resizeMode="cover" />
-                    ) : (
-                      <ThemedView style={styles.imagePlaceholder}>
-                        <ThemedText style={styles.placeholderText}>No image</ThemedText>
-                      </ThemedView>
-                    )}
-                  </View>
+                  <ClosetCard key={item.id} item={item} width={cardWidth} />
                 ))}
               </ScrollView>
               <Pressable style={styles.footerLink} onPress={() => router.push('/upload')}>
@@ -87,6 +92,29 @@ export default function MyClosetScreen() {
         </ThemedView>
       </SafeAreaView>
     </ThemedView>
+  );
+}
+
+function ClosetCard({ item, width }: { item: ClosetItem; width: number }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <Pressable style={[styles.card, { width }]} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)}>
+      {item.image_url ? (
+        <Image source={{ uri: item.image_url }} style={styles.image} resizeMode="cover" />
+      ) : (
+        <ThemedView style={styles.imagePlaceholder}>
+          <ThemedText style={styles.placeholderText}>No image</ThemedText>
+        </ThemedView>
+      )}
+      {hovered ? (
+        <View style={styles.hoverOverlay} pointerEvents="none">
+          <ThemedText style={styles.hoverTitle} numberOfLines={2}>
+            {item.name}
+          </ThemedText>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -132,12 +160,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    gap: 8,
+    gap: GRID_GAP,
     paddingTop: 8,
     paddingBottom: 8,
   },
   card: {
-    width: 160,
     aspectRatio: 1,
     borderRadius: 12,
     overflow: 'hidden',
@@ -146,6 +173,19 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  hoverOverlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'flex-end',
+    padding: 10,
+    // Soft gray shading around every edge, deeper along the bottom so the title is readable.
+    boxShadow: 'inset 0 0 28px rgba(0, 0, 0, 0.25), inset 0 -56px 40px -24px rgba(0, 0, 0, 0.6)',
+  },
+  hoverTitle: {
+    color: 'white',
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '600',
   },
   imagePlaceholder: {
     flex: 1,

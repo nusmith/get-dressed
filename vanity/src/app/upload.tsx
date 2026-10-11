@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
 import { EmailImport } from '@/components/email-import';
+import { StepHeading } from '@/components/step-heading';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { uploadImage } from '@/lib/api';
@@ -34,56 +35,67 @@ export default function UploadScreen() {
     }
   };
 
-  const handleDragOver = (event: any) => {
-    event.preventDefault();
-    setIsDragActive(true);
-  };
+  const dropZoneRef = useRef<View>(null);
 
-  const handleDragLeave = () => {
-    setIsDragActive(false);
-  };
+  // react-native-web doesn't forward drag events from props to the DOM, so wire them up directly.
+  // Re-run when selectedImage changes because the drop zone unmounts while a preview is shown.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const node = dropZoneRef.current as unknown as HTMLElement | null;
+    if (!node) return;
 
-  const handleDrop = (event: any) => {
-    event.preventDefault();
-    setIsDragActive(false);
-
-    const files = event.nativeEvent?.dataTransfer?.files;
-    if (!files?.length) {
-      return;
-    }
-
-    const file = files[0];
-    if (!file.type.startsWith('image/')) {
-      Alert.alert('Invalid file', 'Please drop an image file.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setSelectedImage(reader.result);
-      }
+    const handleDragOver = (event: DragEvent) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      setIsDragActive(true);
     };
-    reader.readAsDataURL(file);
-  };
 
-  const webDropZoneProps =
-    Platform.OS === 'web'
-      ? ({
-          onDragEnter: handleDragOver,
-          onDragOver: handleDragOver,
-          onDrop: handleDrop,
-          onDragLeave: handleDragLeave,
-        } as any)
-      : {};
+    const handleDragLeave = (event: DragEvent) => {
+      // dragleave also fires when moving over the zone's own children; ignore those.
+      if (event.relatedTarget instanceof Node && node.contains(event.relatedTarget)) return;
+      setIsDragActive(false);
+    };
+
+    const handleDrop = (event: DragEvent) => {
+      event.preventDefault();
+      setIsDragActive(false);
+
+      const file = event.dataTransfer?.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      if (!file.type.startsWith('image/')) {
+        Alert.alert('Invalid file', 'Please drop an image file.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setSelectedImage(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+
+    node.addEventListener('dragenter', handleDragOver);
+    node.addEventListener('dragover', handleDragOver);
+    node.addEventListener('dragleave', handleDragLeave);
+    node.addEventListener('drop', handleDrop);
+    return () => {
+      node.removeEventListener('dragenter', handleDragOver);
+      node.removeEventListener('dragover', handleDragOver);
+      node.removeEventListener('dragleave', handleDragLeave);
+      node.removeEventListener('drop', handleDrop);
+    };
+  }, [selectedImage]);
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
-          <ThemedText style={styles.subtitle}>
-            Upload images from your closet
-          </ThemedText>
+          <StepHeading step={1} title="Upload images from your closet" />
           {selectedImage ? (
             <>
               <ThemedView style={styles.previewWrapper}>
@@ -132,7 +144,7 @@ export default function UploadScreen() {
             </>
           ) : (
             <Pressable
-              {...webDropZoneProps}
+              ref={dropZoneRef}
               style={[styles.dropZone, (isActive || isDragActive) && styles.dropZoneActive]}
               onPress={pickImage}
               onHoverIn={() => setIsActive(true)}
@@ -144,7 +156,10 @@ export default function UploadScreen() {
               </ThemedText>
             </Pressable>
           )}
-          {!selectedImage ? <EmailImport /> : null}
+          <EmailImport />
+          <ThemedView style={styles.comingSoon}>
+            <StepHeading step={3} title="Import from Instagram" note="Coming soon" disabled />
+          </ThemedView>
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -160,17 +175,18 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     padding: 24,
-    // The web tab bar floats over the top of the page (see app-tabs.web.tsx).
-    paddingTop: Platform.OS === 'web' ? 120 : 24,
+    // The web tab bar (~80px) floats over the top of the page (see app-tabs.web.tsx).
+    paddingTop: Platform.OS === 'web' ? 104 : 24,
     paddingBottom: 80,
     gap: 12,
   },
-  subtitle: {
-    textAlign: 'center',
-    maxWidth: 320,
+  comingSoon: {
+    width: '100%',
+    maxWidth: 360,
+    paddingTop: 36,
   },
   sessionHint: {
     textAlign: 'center',
