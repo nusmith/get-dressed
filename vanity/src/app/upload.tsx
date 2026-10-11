@@ -12,7 +12,6 @@ export default function UploadScreen() {
   const [isDragActive, setIsDragActive] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const pickImage = async () => {
@@ -31,7 +30,6 @@ export default function UploadScreen() {
 
     if (!result.canceled && result.assets?.[0]?.uri) {
       setSelectedImage(result.assets[0].uri);
-      setConfirmed(false);
     }
   };
 
@@ -63,7 +61,6 @@ export default function UploadScreen() {
     reader.onload = () => {
       if (typeof reader.result === 'string') {
         setSelectedImage(reader.result);
-        setConfirmed(false);
       }
     };
     reader.readAsDataURL(file);
@@ -96,7 +93,6 @@ export default function UploadScreen() {
                   onPress={() => {
                     setSelectedImage(null);
                     setName('');
-                    setConfirmed(false);
                   }}>
                   <ThemedText style={styles.removeButtonText}>✕</ThemedText>
                 </Pressable>
@@ -119,7 +115,8 @@ export default function UploadScreen() {
                     setUploading(true);
                     const filename = `upload-${Date.now()}.jpg`;
                     await uploadImage(selectedImage, filename, name.trim());
-                    setConfirmed(true);
+                    setSelectedImage(null);
+                    setName('');
                     Alert.alert('Success', 'Image uploaded');
                   } catch (error) {
                     Alert.alert('Upload failed', error instanceof Error ? error.message : 'Unknown error');
@@ -128,7 +125,7 @@ export default function UploadScreen() {
                   }
                 }}>
                 <ThemedText style={styles.confirmButtonText}>
-                  {uploading ? 'Uploading...' : confirmed ? 'Confirmed' : 'Confirm'}
+                  {uploading ? 'Uploading...' : 'Confirm'}
                 </ThemedText>
               </Pressable>
             </>
