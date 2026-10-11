@@ -29,6 +29,10 @@ create table if not exists public.item_descriptions (
 create index if not exists item_descriptions_item_id_created_at_idx
   on public.item_descriptions (item_id, created_at desc);
 create index if not exists item_descriptions_user_id_idx on public.item_descriptions (user_id);
+-- For offline analysis over time ranges. Rows arrive in time order and are never updated, so a BRIN
+-- index stays tiny and still narrows scans to the matching blocks.
+create index if not exists item_descriptions_created_at_brin_idx
+  on public.item_descriptions using brin (created_at);
 
 alter table public.item_descriptions enable row level security;
 revoke all on public.item_descriptions from anon, authenticated;
