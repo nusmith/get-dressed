@@ -66,7 +66,7 @@ def call_openai_json(system: str, user: str | list[dict], model: str = "gpt-4o-m
             {"role": "user", "content": user},
         ],
         "response_format": {"type": "json_object"},
-        "max_tokens": 1500,
+        "max_tokens": 3000,
         "temperature": 0,
     }
 

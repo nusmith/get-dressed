@@ -3,9 +3,11 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View, useW
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ItemDetailsModal } from '@/components/item-details-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { fetchUserClosetItems, type ClosetItem } from '@/lib/api';
+import { fetchUserClosetItems, updateClosetItemDetails, type ClosetItem } from '@/lib/api';
+import type { ItemDetails } from '@/lib/taxonomy';
 
 const MIN_COLUMNS = 2;
 const MAX_COLUMNS = 6;
@@ -29,6 +31,24 @@ export default function MyClosetScreen() {
   const { width: windowWidth } = useWindowDimensions();
   // Touch screens have no hover, so tapping a card reveals its name (one card at a time).
   const [revealedId, setRevealedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ClosetItem | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleSaveDetails = async (_name: string, details: ItemDetails) => {
+    if (!editing) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const saved = await updateClosetItemDetails(editing.id, details);
+      setItems((prev) => prev.map((item) => (item.id === editing.id ? { ...item, ...saved } : item)));
+      setEditing(null);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save changes');
+    } finally {
+      setSaving(false);
+    }
+  };
   const cardWidth = gridWidth ? cardWidthFor(gridWidth) : MIN_CARD_WIDTH;
   useFocusEffect(
     useCallback(() => {
@@ -91,10 +111,26 @@ export default function MyClosetScreen() {
                     width={cardWidth}
                     revealed={revealedId === item.id}
                     onToggleReveal={() => setRevealedId((id) => (id === item.id ? null : item.id))}
+                    onOpen={() => {
+                      setSaveError(null);
+                      setEditing(item);
+                    }}
                     onHoverOut={() => setRevealedId((id) => (id === item.id ? null : id))}
                   />
                 ))}
               </ScrollView>
+              <ItemDetailsModal
+                visible={editing !== null}
+                imageUri={editing?.image_url}
+                initialName={editing?.name ?? ''}
+                initialDetails={editing ?? undefined}
+                nameEditable={false}
+                requireChanges
+                busy={saving}
+                error={saveError}
+                onCancel={() => setEditing(null)}
+                onConfirm={handleSaveDetails}
+              />
               <Pressable style={styles.footerLink} onPress={() => router.push('/upload')}>
                 <ThemedText style={styles.footerLinkText}>Add More</ThemedText>
               </Pressable>
@@ -113,16 +149,19 @@ type ClosetCardProps = {
   width: number;
   revealed: boolean;
   onToggleReveal: () => void;
+  onOpen: () => void;
   onHoverOut: () => void;
 };
 
-function ClosetCard({ item, width, revealed, onToggleReveal, onHoverOut }: ClosetCardProps) {
+function ClosetCard({ item, width, revealed, onToggleReveal, onOpen, onHoverOut }: ClosetCardProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
     <Pressable
       style={[styles.card, { width }]}
-      onPress={onToggleReveal}
+      // With a mouse the name is already showing on hover, so a click opens the editor.
+      // On touch screens the first tap reveals the name and a second tap opens it.
+      onPress={hovered || revealed ? onOpen : onToggleReveal}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => {
         setHovered(false);
@@ -137,7 +176,7 @@ function ClosetCard({ item, width, revealed, onToggleReveal, onHoverOut }: Close
         </ThemedView>
       )}
       {hovered || revealed ? (
-        <View style={styles.hoverOverlay} pointerEvents="none">
+        <View style={styles.hoverOverlay}>
           <ThemedText style={styles.hoverTitle} numberOfLines={2}>
             {item.name}
           </ThemedText>
@@ -208,6 +247,7 @@ const styles = StyleSheet.create({
   },
   hoverOverlay: {
     ...StyleSheet.absoluteFill,
+    pointerEvents: 'none',
     justifyContent: 'flex-end',
     padding: 10,
     // Soft gray shading around every edge, deeper along the bottom so the title is readable.

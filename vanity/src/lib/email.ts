@@ -1,4 +1,5 @@
 import { getAccessToken } from './supabase';
+import type { ItemDetails } from './taxonomy';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -9,7 +10,7 @@ export type EmailStatus = {
   last_scanned_at?: string | null;
 };
 
-export type EmailProposal = {
+export type EmailProposal = ItemDetails & {
   key: string;
   name: string;
   image_url: string | null;
@@ -68,10 +69,13 @@ export function scanEmailReceipts() {
   return request<{ scanned_messages: number; proposals: EmailProposal[] }>('/email/scan', { method: 'POST' });
 }
 
-export async function importProposals(tokens: string[]) {
+// Omit name/details to keep what the scan inferred (used by "Add all").
+export type ImportRequest = { token: string; name?: string; details?: ItemDetails };
+
+export async function importProposals(proposals: ImportRequest[]) {
   const { results } = await request<{ results: ImportResult[] }>('/email/import', {
     method: 'POST',
-    body: JSON.stringify({ proposals: tokens }),
+    body: JSON.stringify({ proposals }),
   });
   return results;
 }

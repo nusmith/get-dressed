@@ -4,10 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
 import { EmailImport } from '@/components/email-import';
+import { ItemDetailsModal } from '@/components/item-details-modal';
 import { StepHeading } from '@/components/step-heading';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { uploadImage } from '@/lib/api';
+import type { ItemDetails } from '@/lib/taxonomy';
 
 export default function UploadScreen() {
   const [isActive, setIsActive] = useState(false);
@@ -15,6 +17,25 @@ export default function UploadScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleUpload = async (finalName: string, details: ItemDetails) => {
+    if (!selectedImage) return;
+    try {
+      setUploading(true);
+      setUploadError(null);
+      const filename = `upload-${Date.now()}.jpg`;
+      await uploadImage(selectedImage, filename, finalName, details);
+      setDetailsOpen(false);
+      setSelectedImage(null);
+      setName('');
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -101,8 +122,9 @@ export default function UploadScreen() {
               <ThemedView style={styles.previewWrapper}>
                 <Image source={{ uri: selectedImage }} style={styles.previewImage} resizeMode="cover" />
                 <Pressable
-                  disabled={!name.trim() || uploading}
-                  style={styles.removeButton}
+                  disabled={uploading}
+                  accessibilityLabel="Remove image"
+                  style={[styles.removeButton, uploading && styles.confirmButtonDisabled]}
                   onPress={() => {
                     setSelectedImage(null);
                     setName('');
@@ -119,23 +141,9 @@ export default function UploadScreen() {
               <Pressable
                 disabled={!name.trim() || uploading}
                 style={[styles.confirmButton, (!name.trim() || uploading) && styles.confirmButtonDisabled]}
-                onPress={async () => {
-                  if (!selectedImage || !name.trim()) {
-                    return;
-                  }
-
-                  try {
-                    setUploading(true);
-                    const filename = `upload-${Date.now()}.jpg`;
-                    await uploadImage(selectedImage, filename, name.trim());
-                    setSelectedImage(null);
-                    setName('');
-                    Alert.alert('Success', 'Image uploaded');
-                  } catch (error) {
-                    Alert.alert('Upload failed', error instanceof Error ? error.message : 'Unknown error');
-                  } finally {
-                    setUploading(false);
-                  }
+                onPress={() => {
+                  setUploadError(null);
+                  setDetailsOpen(true);
                 }}>
                 <ThemedText style={styles.confirmButtonText}>
                   {uploading ? 'Uploading...' : 'Confirm'}
@@ -156,6 +164,15 @@ export default function UploadScreen() {
               </ThemedText>
             </Pressable>
           )}
+          <ItemDetailsModal
+            visible={detailsOpen}
+            imageUri={selectedImage}
+            initialName={name.trim()}
+            busy={uploading}
+            error={uploadError}
+            onCancel={() => setDetailsOpen(false)}
+            onConfirm={handleUpload}
+          />
           <EmailImport />
           <ThemedView style={styles.comingSoon}>
             <StepHeading step={3} title="Import from Instagram" note="Coming soon" disabled />

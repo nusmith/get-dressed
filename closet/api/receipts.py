@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from api.openai_client import call_openai_json
+from api.taxonomy import DETAIL_KEYS, clean_item_details, prompt_reference
 
 MAX_TEXT_CHARS = 12000
 MAX_IMAGE_CANDIDATES = 40
@@ -93,7 +94,9 @@ shipping, taxes, promotions, recommended or "you may also like" products).
 If the email is not a purchase receipt, or has no such items, return no items.
 
 Respond with JSON only, shaped exactly like:
-{"items": [{"name": "<brand, product name and color>", "image_index": <int or null>}]}
+{"items": [{"name": "<brand, product name and color>", "image_index": <int or null>,
+            "brand": <string or null>, "category": <string or null>,
+            "subcategory": <string or null>, "size": <string or null>}]}
 
 For name, copy the brand, product name and color exactly as the email writes them, keeping their
 capitalization and spelling. Leave out size, quantity, price and SKU.
@@ -106,7 +109,15 @@ The candidate images are attached, each labeled "Image N". Look at them: the pho
 that item (same kind of product, and the same color when it is stated). A sneaker's photo shows a
 shoe, a jacket's photo shows a jacket. The email text also has markers like [image 3] where each
 image appears, which usually sit right before that product's name. If no attached image clearly
-matches an item, use null rather than guessing."""
+matches an item, use null rather than guessing.
+
+brand is the item's brand (not the store, unless the store is the brand), written as the brand
+writes it. category, subcategory and size must each be copied exactly from the lists below, for the
+item's category; use null when the email doesn't make it clear. Map the size the email shows onto the
+closest listed value (e.g. "Size 9 M" -> "9", "Medium" -> "M", "W28" or "28x30" -> "28").
+
+Categories:
+{taxonomy}"""
 
 
 def _vision_image(url: str) -> str | None:
@@ -121,7 +132,10 @@ def _vision_image(url: str) -> str | None:
 
 
 def extract_items(message: dict[str, Any]) -> list[dict[str, Any]]:
-    """Ask the model for the fashion items in a receipt. Returns [{name, image_url}]."""
+    """Ask the model for the fashion items in a receipt.
+
+    Returns [{name, image_url, brand, category, subcategory, size}] with unknown details as None.
+    """
     body, images = parse_email_content(message["html"], message["text"])
     if not body:
         return []
@@ -148,7 +162,7 @@ def extract_items(message: dict[str, Any]) -> list[dict[str, Any]]:
             content.append({"type": "text", "text": f"Image {i} (alt=\"{candidates[i]['alt']}\"):"})
             content.append({"type": "image_url", "image_url": {"url": data_url, "detail": "low"}})
 
-    raw = call_openai_json(SYSTEM_PROMPT, content)
+    raw = call_openai_json(SYSTEM_PROMPT.replace("{taxonomy}", prompt_reference()), content)
     try:
         items = json.loads(raw).get("items", [])
     except (json.JSONDecodeError, AttributeError):
@@ -168,7 +182,9 @@ def extract_items(message: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(idx, int) and idx in shown and idx not in used:
             used.add(idx)
             image_url = candidates[idx]["src"]
-        results.append({"name": name, "image_url": image_url})
+        # Model output is untrusted: keep only values that fit the taxonomy.
+        details = clean_item_details(item, strict=False)
+        results.append({"name": name, "image_url": image_url, **{k: details.get(k) for k in DETAIL_KEYS}})
     return results
 
 

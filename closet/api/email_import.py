@@ -21,10 +21,11 @@ from pydantic import BaseModel
 
 from api import gmail
 from api.auth import get_user_id_from_request
-from api.closet_store import save_closet_item
+from api.closet_store import save_closet_item, user_brands
 from api.email_security import decrypt_token, encrypt_token, sign, verify
 from api.receipts import download_image, extract_items, normalize_item_name, retailer_from_sender
 from api.supabase_client import supabase
+from api.taxonomy import DETAIL_KEYS, ItemDetails, clean_item_details
 
 router = APIRouter(prefix="/email")
 
@@ -40,8 +41,16 @@ class ConnectPayload(BaseModel):
     state: str
 
 
+class ImportProposal(BaseModel):
+    token: str
+    # What the user confirmed in the details modal. Omitted (e.g. "Add all") means use the
+    # values the scan inferred.
+    name: str | None = None
+    details: ItemDetails | None = None
+
+
 class ImportPayload(BaseModel):
-    proposals: list[str]
+    proposals: list[ImportProposal]
 
 
 def _db():
@@ -197,8 +206,15 @@ def email_scan(request: Request) -> dict[str, Any]:
     unique: dict[str, dict[str, Any]] = {}
     for item in (item for items in per_message for item in items):
         existing = unique.get(item["import_key"])
-        if existing is None or (not existing["image_url"] and item["image_url"]):
+        if existing is None:
             unique[item["import_key"]] = item
+            continue
+        if not existing["image_url"] and item["image_url"]:
+            existing["image_url"] = item["image_url"]
+        # e.g. the shipping email may state the size when the confirmation didn't.
+        for k in DETAIL_KEYS:
+            if not existing.get(k) and item.get(k):
+                existing[k] = item[k]
 
     already = _imported_keys(user_id)
     expires = int(time.time()) + PROPOSAL_TTL_SECONDS
@@ -209,6 +225,7 @@ def email_scan(request: Request) -> dict[str, Any]:
                 "key": item["import_key"],
                 "name": item["name"],
                 "image_url": item["image_url"],
+                **{k: item.get(k) for k in DETAIL_KEYS},
                 "retailer": item["retailer"],
                 "subject": item["subject"],
                 "date": item["date"],
@@ -232,13 +249,24 @@ def email_import(request: Request, payload: ImportPayload) -> dict[str, Any]:
     if len(payload.proposals) > MAX_IMPORT_BATCH:
         raise HTTPException(status_code=400, detail=f"Import at most {MAX_IMPORT_BATCH} items at a time")
 
-    items = [verify(token) for token in payload.proposals]
-    if any(item.get("uid") != user_id for item in items):
-        raise HTTPException(status_code=403, detail="Proposal belongs to a different account")
+    known_brands = user_brands(user_id)
+    items = []
+    for proposal in payload.proposals:
+        item = verify(proposal.token)
+        if item.get("uid") != user_id:
+            raise HTTPException(status_code=403, detail="Proposal belongs to a different account")
+        name = (proposal.name or "").strip()[:120] or item["name"]
+        if proposal.details is not None:
+            details = clean_item_details(proposal.details.model_dump(), known_brands=known_brands)
+        else:
+            details = clean_item_details(
+                {k: item.get(k) for k in DETAIL_KEYS}, strict=False, known_brands=known_brands
+            )
+        items.append((item, name, details))
 
     already = _imported_keys(user_id)
     results = []
-    for item in items:
+    for item, name, details in items:
         key = item["import_key"]
         if key in already:
             results.append({"key": key, "status": "already_added"})
@@ -256,17 +284,18 @@ def email_import(request: Request, payload: ImportPayload) -> dict[str, Any]:
 
         saved = save_closet_item(
             user_id=user_id,
-            name=item["name"],
+            name=name,
             image_path=image_path,
             image_bytes=image_bytes,
             content_type=content_type,
+            source="gmail",
             metadata={
-                "source": "gmail",
                 "import_key": key,
                 "message_id": item["message_id"],
                 "retailer": item["retailer"],
                 "order_subject": item["subject"],
                 "order_date": item["date"],
+                **details,
             },
         )
         already.add(key)
