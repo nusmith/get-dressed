@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,13 +7,16 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { fetchUserClosetItems, type ClosetItem } from '@/lib/api';
 
+const MIN_COLUMNS = 2;
 const MAX_COLUMNS = 6;
 const MIN_CARD_WIDTH = 160;
 const GRID_GAP = 8;
+const NARROW_SCREEN = 600;
 
-// Up to MAX_COLUMNS per row, each card stretched to share the row; fewer columns on narrow screens.
+// 2 to 6 per row, each card stretched to share the row; fewer columns on narrower screens.
 function cardWidthFor(gridWidth: number) {
-  const columns = Math.max(1, Math.min(MAX_COLUMNS, Math.floor((gridWidth + GRID_GAP) / (MIN_CARD_WIDTH + GRID_GAP))));
+  const fit = Math.floor((gridWidth + GRID_GAP) / (MIN_CARD_WIDTH + GRID_GAP));
+  const columns = Math.max(MIN_COLUMNS, Math.min(MAX_COLUMNS, fit));
   return Math.floor((gridWidth - GRID_GAP * (columns - 1)) / columns);
 }
 
@@ -23,6 +26,7 @@ export default function MyClosetScreen() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
+  const { width: windowWidth } = useWindowDimensions();
   const cardWidth = gridWidth ? cardWidthFor(gridWidth) : MIN_CARD_WIDTH;
   useFocusEffect(
     useCallback(() => {
@@ -57,7 +61,7 @@ export default function MyClosetScreen() {
   );
 
   return (
-    <ThemedView style={styles.container}> 
+    <ThemedView style={[styles.container, windowWidth < NARROW_SCREEN && styles.containerNarrow]}> 
       <SafeAreaView style={styles.safeArea}>
         <ThemedView style={styles.content}>
           {!hasLoaded && loading ? (
@@ -123,6 +127,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginTop: 120,
     marginHorizontal: 50,
+  },
+  containerNarrow: {
+    marginHorizontal: 16,
   },
   safeArea: {
     flex: 1,
