@@ -202,3 +202,31 @@ export async function suggestOutfit(options: SuggestOutfitOptions = {}): Promise
 
   return response.json();
 }
+
+export type NamedCount = { name: string; count: number };
+
+export type ClosetAnalysis = {
+  item_count: number;
+  /** Items whose photo has been described; colors, dressiness and seasons only count these. */
+  described_count: number;
+  /** Main color of each item, most common first. */
+  colors: (NamedCount & { hex: string })[];
+  /** Every dressiness level, loungewear to formal, including ones with no items. */
+  formality: NamedCount[];
+  /** Every season, spring to winter. */
+  seasons: NamedCount[];
+  categories: NamedCount[];
+  brands: NamedCount[];
+  /** Plain statements about what the closet is missing. */
+  gaps: string[];
+};
+
+export async function fetchClosetAnalysis(): Promise<ClosetAnalysis> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/closet/analysis`, { headers });
+  if (!response.ok) throw new Error('Could not load your style');
+  return response.json();
+}

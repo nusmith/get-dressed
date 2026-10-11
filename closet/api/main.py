@@ -12,6 +12,7 @@ from api.email_import import router as email_router
 from api.supabase_client import supabase
 from api.taxonomy import DETAIL_KEYS, ItemDetails, clean_item_details, taxonomy_payload
 from api.item_style import describe_item, describe_missing, suggest_details
+from api.style_analysis import analyze_closet
 from api.openai_client import call_openai
 from api.outfits import SuggestOutfitRequest, suggest_outfit
 
@@ -85,7 +86,7 @@ def get_user_closet_brands(request: Request) -> dict[str, list[str]]:
 def get_user_closet(request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
     user_id = get_user_id_from_request(request)
     rows = fetch_closet_rows(user_id)
-    # Describe any photos that haven't been yet (older items, or a run that failed after saving).
+    # Describe any photos that have no description yet (a run that failed after saving).
     background_tasks.add_task(describe_missing, user_id, rows)
     return {"items": [closet_item_payload(row) for row in rows]}
 
@@ -117,6 +118,16 @@ def update_closet_item_details(request: Request, item_id: str, payload: UpdateDe
 
     supabase.table("closet").update({"metadata": metadata}).eq("id", item_id).eq("user_id", user_id).execute()
     return {"id": item_id, **{k: details.get(k) for k in DETAIL_KEYS}}
+
+
+@app.get("/closet/analysis")
+def get_closet_analysis(request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Colors, dressiness, seasons, categories, brands and gaps across the caller's closet."""
+    user_id = get_user_id_from_request(request)
+    rows = fetch_closet_rows(user_id)
+    # The analysis is built from photo descriptions, so describe any that are missing for next time.
+    background_tasks.add_task(describe_missing, user_id, rows)
+    return analyze_closet(rows)
 
 
 @app.post("/closet/suggest_details")

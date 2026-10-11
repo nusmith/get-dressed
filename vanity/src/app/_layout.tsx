@@ -1,11 +1,16 @@
-import { DarkTheme, DefaultTheme, Redirect, Slot, ThemeProvider, usePathname } from 'expo-router';
+import { DarkTheme, DefaultTheme, Redirect, Stack, ThemeProvider, usePathname } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 
-import AppTabs from '@/components/app-tabs';
+import { Colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 
-export default function TabLayout() {
+// React Navigation paints screens with its theme's background (a light gray by default), which shows
+// around the tab screens' margins. Use the app's own backgrounds instead.
+const LightNavTheme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: Colors.light.background } };
+const DarkNavTheme = { ...DarkTheme, colors: { ...DarkTheme.colors, background: Colors.dark.background } };
+
+export default function RootLayout() {
   const colorScheme = useColorScheme();
   const pathname = usePathname();
   const [sessionReady, setSessionReady] = useState(false);
@@ -46,8 +51,12 @@ export default function TabLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      {hasSession ? <AppTabs /> : <Slot />}
+    <ThemeProvider value={colorScheme === 'dark' ? DarkNavTheme : LightNavTheme}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="upload" options={{ headerShown: true, title: 'Add to closet', headerBackTitle: 'Closet' }} />
+        <Stack.Screen name="login/index" />
+      </Stack>
     </ThemeProvider>
   );
 }
