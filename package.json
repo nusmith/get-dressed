@@ -2,5 +2,11 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "supabase": "^2.114.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm --prefix closet run dev\" \"npm --prefix vanity run web -- --port 8081\""
   }
 }
